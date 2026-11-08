@@ -19,6 +19,7 @@ Idén kom ur en chatt med Claude (se [docs/ursprunglig-chatt.md](docs/ursprungli
 - **Efter varje parti** sparas två till tre lärdomar i kunskapsbasen.
 - **Claude spelar på ungefär min nivå**, inte på max.
 - **Så mycket som möjligt i Rust.**
+- **Webbapp via wasm, kunskapsbasen i webbläsaren.**
 
 ## Träningsrutin (råden från chatten)
 
@@ -26,28 +27,35 @@ Idén kom ur en chatt med Claude (se [docs/ursprunglig-chatt.md](docs/ursprungli
 2. **Taktikpussel** 10–15 minuter om dagen, mest utdelning per minut.
 3. **Längre partier**, 10–15 minuter, så det finns tid att tänka.
 
-## Spec-utkast för appen (v1)
+## Vad appen gör (v1)
 
-Minsta sak som fungerar. Inget mer än detta tills det används.
+En webbapp i Rust, kompilerad till wasm. Allt körs i webbläsaren och kunskapsbasen sparas där, i `localStorage`.
 
 **Spela**
-- Bräde på skärm och textinmatning av drag i notation. Båda går till samma brädmodell.
-- Dragvalidering och ställning via ett befintligt schackbibliotek i Rust (t.ex. `shakmaty`), aldrig via Claude.
-- Claudes drag väljs via en motor på begränsad styrka (Stockfish via UCI med satt Elo/skill level) så nivån följer min. Claude kommenterar, motorn flyttar.
-- "Beskriv ställningen" i ord, för blindspel.
+- Klicka på brädet eller skriv drag: "e4", "Sf3" eller "springare f3". Dragen visas med svenska bokstäver.
+- Reglerna kommer från schackbiblioteket `cozy-chess` (MIT), aldrig från Claude. `shakmaty` valdes bort eftersom det är GPL.
+- En egen motor i Rust spelar på din nivå. Den söker 1–3 halvdrag och väljer slumpvis bland drag som är nästan lika bra.
+- "Beskriv ställningen" läser upp pjäserna i ord, för blindspel.
 
 **Lära**
-- Efter partiet: Claude pekar ut de 2–3 viktigaste felen (hängande pjäser, missade hot, missade taktiker) och sparar dem som lärdomar.
-- Kunskapsbas: en enkel fil eller liten databas med partier (PGN), feltyper per parti och lärdomar.
+- Varje drag du gör bedöms. Tappar du mer än en och en halv bonde får du veta vad som var bättre och vilken sorts fel det var: hängande pjäs, missat slag eller missat hot.
+- Felen sparas per parti. Lärdomarna visar de två till tre vanligaste felen i de senaste tio partierna, formulerade som dragkontrollen från chatten.
 
 **Följa upp**
-- Grov Elo-uppskattning baserat på resultat mot motorn på känd styrka.
-- Enkel graf: uppskattad Elo och antal enkla fel per parti över tid.
+- Grov Elo-uppskattning efter varje parti, mot motorns nominella nivå. Startar på 1000.
+- Motorns nivå följer din uppskattade rating.
+- En kurva visar ratingen över tid.
 
-**Öppna frågor**
-- Gränssnitt: CLI först, eller webb via wasm direkt?
-- Var ska kunskapsbasen ligga: i repot, lokalt eller i Claudes minne?
-- Röststyrning för drag när jag inte kan titta på skärmen?
+**Inte med än**
+- **Röststyrning.** Läggs till om du vill spela utan att titta på skärmen.
+- **Kommentarer från Claude.** Felbedömningen är regelbaserad i dag. Claude kan kopplas in senare för förklaringar i fritext.
+- **Kalibrering.** Nivåernas Elo-värden är gissningar. Spela mot chess.com-botar på känd nivå och justera tabellen i `crates/app/src/level.rs`.
+
+## Spela lokalt
+
+```sh
+make serve   # öppna http://127.0.0.1:8080
+```
 
 ## Utvecklingsmiljö
 
@@ -55,7 +63,7 @@ Kraven är hårda och körs både lokalt och i CI. Se [docs/ARCHITECTURE.md](doc
 
 ```sh
 make setup   # git-hooks och verktyg, en gång
-make check   # allt som CI kör: fmt, clippy, typos, doc, test, 100 % täckning, arch, deny, machete, mutanter
+make check   # allt som CI kör: fmt, clippy, typos, doc, test, 100 % täckning, arch, deny, machete, mutanter, wasm
 ```
 
 - Toolchain pinnad i `rust-toolchain.toml`, varningar är fel.
@@ -66,4 +74,4 @@ make check   # allt som CI kör: fmt, clippy, typos, doc, test, 100 % täckning,
 
 ## Status
 
-Domänlagret finns med Elo-uppskattning och svensk notation, plus hela pipelinen. Nästa steg är att svara på de öppna frågorna och bygga spelloopen.
+v1 är spelbar: parti mot motorn, felbedömning, lärdomar och ratingkurva. Nästa steg är att kalibrera nivåerna och bestämma om röststyrning och Claude-kommentarer behövs.

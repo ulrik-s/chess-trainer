@@ -5,14 +5,22 @@ Allt som kan skrivas i Rust skrivs i Rust. Koden är en Cargo-arbetsyta med ett 
 ## Lager
 
 ```
-crates/domain     ren domänlogik, inga beroenden, ingen I/O
-crates/app        (kommer) användningsfall: spela parti, analysera, uppdatera kunskapsbas
-crates/adapters   (kommer) motor (Stockfish via UCI), lagring, UI (CLI, senare webb via wasm)
+crates/domain   ren domänlogik utan beroenden: Elo, svensk notation
+crates/engine   motor ovanpå cozy-chess: SAN, sökning med justerbar styrka, felbedömning
+crates/app      användningsfall: parti, nivåanpassning, kunskapsbas, HTML-vyer
+crates/web      tunt DOM-lim kompilerat till wasm, kunskapsbasen i localStorage
 ```
 
-Beroenden pekar bara inåt: adapters → app → domain. Cargo gör detta omöjligt att bryta
-utan att ändra en `Cargo.toml`, och `scripts/arch.sh` bevakar att domänet förblir helt
-utan beroenden.
+Beroenden pekar bara inåt: web → app → engine och domain. Cargo gör det omöjligt att bryta
+utan att ändra en `Cargo.toml`, och `scripts/arch.sh` bevakar att domänet förblir helt utan
+beroenden.
+
+Hela appen körs i webbläsaren, utan server. Kunskapsbasen sparas som JSON i `localStorage`. Går den inte att läsa flyttas
+den till en egen nyckel i stället för att skrivas över.
+
+Webbcratet är undantaget från täckning och mutationstest, eftersom det bara går att köra i
+en webbläsare. Därför innehåller det ingen logik; allt som går att testa ligger i `app`.
+I stället bygger CI webbappen med trunk.
 
 ## Regler som bevakas automatiskt
 
@@ -32,6 +40,7 @@ utan beroenden.
 | Conventional commits                     | committed (commit-msg-hook och CI)           |
 | Hemligheter i historiken                 | gitleaks                                     |
 | Workflow-syntax                          | actionlint                                   |
+| Webbappen bygger till wasm               | trunk                                        |
 | Pinnad toolchain och actions             | `rust-toolchain.toml`, SHA-pinnade actions, Dependabot |
 
 ## Lokalt

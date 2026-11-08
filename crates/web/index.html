@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="sv">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Schacktränaren</title>
+    <link rel="icon" href="data:," />
+    <link data-trunk rel="rust" data-wasm-opt="z" />
+    <style>
+      :root {
+        --bg: #f6f4ef;
+        --fg: #1d1d1b;
+        --muted: #6b6a66;
+        --card: #ffffff;
+        --light: #eeeed2;
+        --dark: #769656;
+        --sel: #f6f669;
+        --accent: #3b6e2a;
+        --warn: #9a3b1b;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #171716;
+          --fg: #ecebe6;
+          --muted: #a3a29c;
+          --card: #22221f;
+          --light: #c9c9ad;
+          --dark: #5a7a43;
+          --sel: #c8c84a;
+          --accent: #8cc56f;
+          --warn: #f08a62;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 16px;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.5 system-ui, sans-serif;
+      }
+      main {
+        max-width: 520px;
+        margin: 0 auto;
+        display: grid;
+        gap: 16px;
+      }
+      h1 {
+        font-size: 1.4rem;
+        margin: 0;
+      }
+      #status {
+        margin: 0;
+        font-weight: 600;
+      }
+      #board {
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        width: 100%;
+        aspect-ratio: 1;
+        border-radius: 6px;
+        overflow: hidden;
+        user-select: none;
+      }
+      .sq {
+        border: 0;
+        padding: 0;
+        margin: 0;
+        font-size: min(9vw, 46px);
+        line-height: 1;
+        display: grid;
+        place-items: center;
+        cursor: pointer;
+      }
+      .sq:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: -3px;
+      }
+      .light {
+        background: var(--light);
+      }
+      .dark {
+        background: var(--dark);
+      }
+      .sel {
+        background: var(--sel);
+      }
+      .pc.w {
+        color: #fff;
+        text-shadow: 0 0 2px #000, 0 0 1px #000;
+      }
+      .pc.b {
+        color: #111;
+      }
+      form,
+      .buttons {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      input {
+        flex: 1;
+        min-width: 0;
+        font: inherit;
+        padding: 8px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--muted);
+        background: var(--card);
+        color: var(--fg);
+      }
+      button.action {
+        font: inherit;
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--muted);
+        background: var(--card);
+        color: var(--fg);
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: var(--bg);
+      }
+      section {
+        background: var(--card);
+        border-radius: 8px;
+        padding: 12px 14px;
+      }
+      h2 {
+        font-size: 1rem;
+        margin: 0 0 6px;
+      }
+      #moves,
+      #log {
+        white-space: pre-line;
+        margin: 0;
+        color: var(--muted);
+      }
+      #log {
+        color: var(--fg);
+      }
+      #lessons {
+        margin: 0;
+        padding-left: 20px;
+      }
+      #rating-chart {
+        color: var(--accent);
+      }
+      #rating-chart svg {
+        width: 100%;
+        height: 80px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Schacktränaren</h1>
+      <p id="status" aria-live="polite">Laddar…</p>
+      <div id="board" role="grid" aria-label="Schackbräde"></div>
+      <form id="move-form">
+        <input
+          id="move-input"
+          autocomplete="off"
+          autocapitalize="none"
+          spellcheck="false"
+          placeholder="Ditt drag, t.ex. e4 eller springare f3"
+          aria-label="Ditt drag"
+        />
+        <button class="action primary" type="submit">Spela</button>
+      </form>
+      <div class="buttons">
+        <button class="action" id="new-white" type="button">Nytt parti som vit</button>
+        <button class="action" id="new-black" type="button">Nytt parti som svart</button>
+        <button class="action" id="describe" type="button">Beskriv ställningen</button>
+        <button class="action" id="resign" type="button">Ge upp</button>
+      </div>
+      <section>
+        <h2>Händelser</h2>
+        <p id="log" aria-live="polite"></p>
+      </section>
+      <section>
+        <h2>Drag</h2>
+        <p id="moves"></p>
+      </section>
+      <section>
+        <h2 id="rating">Uppskattad rating</h2>
+        <div id="rating-chart"></div>
+      </section>
+      <section>
+        <h2>Lärdomar</h2>
+        <ul id="lessons"></ul>
+      </section>
+    </main>
+  </body>
+</html>

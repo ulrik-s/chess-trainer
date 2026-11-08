@@ -101,6 +101,20 @@ fn translate_tail(tail: &str) -> Option<String> {
     chars.next().is_none().then_some(out)
 }
 
+/// Översätter standard-SAN till svenska pjäsbokstäver, som `Nf3` till `Sf3`.
+#[must_use]
+pub fn to_swedish(san: &str) -> String {
+    san.chars()
+        .map(|c| match c {
+            'N' => 'S',
+            'B' => 'L',
+            'R' => 'T',
+            'Q' => 'D',
+            other => other,
+        })
+        .collect()
+}
+
 /// Översätter ett drag i svensk notation till standard-SAN.
 ///
 /// Tar emot "Sf3", "springare f3", "e4", "Dxe5+", "0-0" och "e8=D".
@@ -134,7 +148,17 @@ pub fn to_san(input: &str) -> Option<String> {
     reason = "testnamnen är dokumentationen"
 )]
 mod tests {
-    use super::to_san;
+    use super::{to_san, to_swedish};
+
+    #[test]
+    fn english_san_is_shown_in_swedish() {
+        assert_eq!(to_swedish("Nf3"), "Sf3");
+        assert_eq!(to_swedish("Bxc4+"), "Lxc4+");
+        assert_eq!(to_swedish("Rfe1"), "Tfe1");
+        assert_eq!(to_swedish("exd8=Q#"), "exd8=D#");
+        assert_eq!(to_swedish("O-O-O"), "O-O-O");
+        assert_eq!(to_swedish("Ke2"), "Ke2");
+    }
 
     #[test]
     fn pawn_moves_pass_through() {

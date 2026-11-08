@@ -44,3 +44,9 @@ shadow_unrelated = "deny"
 str_to_string = "deny"
 string_slice = "deny"
 wildcard_enum_match_arm = "deny"
+
+# Webbappen laddas på telefon: optimera release för storlek.
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1

@@ -1,3 +1,6 @@
 # cargo-mutants: varje mutant som överlever gör att bygget fallerar.
 timeout_multiplier = 3.0
 minimum_test_timeout = 60
+
+# Webbcratet är DOM-lim som bara kan köras i en webbläsare. All logik ligger i app-cratet.
+exclude_globs = ["crates/web/**"]
