@@ -1,0 +1,46 @@
+[workspace]
+members = ["crates/*"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.96"
+license = "MIT"
+repository = "https://github.com/ulrik-s/chess-trainer"
+authors = ["Ulrik Sjölin"]
+publish = false
+
+# Lints gäller alla crates i arbetsytan (varje crate har `[lints] workspace = true`).
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+unreachable_pub = "deny"
+unused_qualifications = "deny"
+rust_2018_idioms = { level = "deny", priority = -1 }
+unused = { level = "deny", priority = -1 }
+
+[workspace.lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+# Utvalda restriction-lints: inga paniker, inga oskyddade index, inga tysta heltalsfel.
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+todo = "deny"
+unimplemented = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+print_stderr = "deny"
+indexing_slicing = "deny"
+arithmetic_side_effects = "deny"
+as_conversions = "deny"
+missing_docs_in_private_items = "deny"
+allow_attributes_without_reason = "deny"
+shadow_unrelated = "deny"
+str_to_string = "deny"
+string_slice = "deny"
+wildcard_enum_match_arm = "deny"

@@ -1,0 +1,16 @@
+[package]
+name = "chess-trainer-domain"
+description = "Ren domänlogik för schacktränaren: Elo-uppskattning och svensk dragnotation."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+
+# Domänlagret har inga beroenden. CI-steget "arch" bevakar att det förblir så.
+[dependencies]
+
+[lints]
+workspace = true

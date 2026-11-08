@@ -1,0 +1,7 @@
+#!/bin/sh
+# Snabba kontroller före varje commit. Hela sviten körs i pre-push.
+set -eu
+cargo fmt --all --check
+taplo fmt --check
+typos
+cargo clippy --workspace --all-targets --all-features --locked

@@ -1,0 +1,4 @@
+# Varningar är fel, lokalt och i CI.
+[build]
+rustflags = ["-D", "warnings"]
+rustdocflags = ["-D", "warnings"]
