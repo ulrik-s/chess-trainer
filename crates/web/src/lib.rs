@@ -33,6 +33,8 @@ struct State {
     log: Vec<String>,
     /// Får vi skriva till `localStorage`? Falskt om en trasig kunskapsbas inte kunde säkerhetskopieras.
     can_save: bool,
+    /// Färgas rutorna efter hur attackerade de är?
+    show_heat: bool,
 }
 
 thread_local! {
@@ -108,6 +110,7 @@ fn render(state: &State, doc: &Document) -> Result<(), JsValue> {
         state.game.board(),
         flipped,
         state.selected,
+        state.show_heat.then_some(state.game.player()),
     ));
     by_id(doc, "status")?.set_text_content(Some(&view::status_text(&state.game)));
     by_id(doc, "moves")?.set_text_content(Some(&view::move_list(state.game.moves())));
@@ -241,6 +244,18 @@ fn new_game(player: Color) -> Result<(), JsValue> {
     })
 }
 
+/// Slår av eller på färgningen av attackerade rutor.
+fn on_heat_toggle(event: &Event) -> Result<(), JsValue> {
+    let checked = event
+        .target()
+        .and_then(|target| target.dyn_into::<HtmlInputElement>().ok())
+        .is_some_and(|input| input.checked());
+    with_state(|state, _| {
+        state.show_heat = checked;
+        Ok(())
+    })
+}
+
 /// En händelsehanterare.
 type Handler = fn(&Event) -> Result<(), JsValue>;
 
@@ -292,6 +307,7 @@ pub fn start() -> Result<(), JsValue> {
         selected: None,
         log,
         can_save,
+        show_heat: true,
     };
     render(&state, &doc)?;
     STATE.with_borrow_mut(|slot| *slot = Some(state));
@@ -302,5 +318,6 @@ pub fn start() -> Result<(), JsValue> {
     listen(&doc, "new-black", "click", |_| new_game(Color::Black))?;
     listen(&doc, "resign", "click", on_resign)?;
     listen(&doc, "describe", "click", on_describe)?;
+    listen(&doc, "show-heat", "change", on_heat_toggle)?;
     Ok(())
 }

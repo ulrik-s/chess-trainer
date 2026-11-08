@@ -12,8 +12,8 @@
         --fg: #1d1d1b;
         --muted: #6b6a66;
         --card: #ffffff;
-        --light: #eeeed2;
-        --dark: #769656;
+        --light: #e3e6ea;
+        --dark: #9aa5b4;
         --sel: #f6f669;
         --accent: #3b6e2a;
         --warn: #9a3b1b;
@@ -24,8 +24,8 @@
           --fg: #ecebe6;
           --muted: #a3a29c;
           --card: #22221f;
-          --light: #c9c9ad;
-          --dark: #5a7a43;
+          --light: #c4c9d0;
+          --dark: #75818f;
           --sel: #c8c84a;
           --accent: #8cc56f;
           --warn: #f08a62;
@@ -96,6 +96,62 @@
       }
       .sel {
         background: var(--sel);
+      }
+      /* Attackfärgning: en inre skugga tonar rutan men låter rutfärg och markering synas. */
+      .heat-danger-1 {
+        box-shadow: inset 0 0 0 100px rgba(214, 39, 40, 0.3);
+      }
+      .heat-danger-2 {
+        box-shadow: inset 0 0 0 100px rgba(214, 39, 40, 0.48);
+      }
+      .heat-danger-3 {
+        box-shadow: inset 0 0 0 100px rgba(214, 39, 40, 0.65);
+      }
+      .heat-safe-1 {
+        box-shadow: inset 0 0 0 100px rgba(31, 150, 70, 0.16);
+      }
+      .heat-safe-2 {
+        box-shadow: inset 0 0 0 100px rgba(31, 150, 70, 0.28);
+      }
+      .heat-safe-3 {
+        box-shadow: inset 0 0 0 100px rgba(31, 150, 70, 0.4);
+      }
+      .heat-even {
+        box-shadow: inset 0 0 0 100px rgba(235, 180, 20, 0.4);
+      }
+      .heat-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 16px;
+        margin-top: -8px;
+      }
+      .toggle {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .legend {
+        margin: 0;
+        font-size: 0.85rem;
+        color: var(--muted);
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 8px;
+      }
+      .item {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        white-space: nowrap;
+      }
+      .swatch {
+        display: inline-block;
+        width: 14px;
+        height: 14px;
+        border-radius: 3px;
+        background: var(--light);
       }
       .pc {
         font-family: "Apple Symbols", "Segoe UI Symbol", "DejaVu Sans", sans-serif;
@@ -173,6 +229,14 @@
       <h1>Schacktränaren</h1>
       <p id="status" aria-live="polite">Laddar…</p>
       <div id="board" role="grid" aria-label="Schackbräde"></div>
+      <div class="heat-bar">
+        <label class="toggle"><input type="checkbox" id="show-heat" checked /> Visa attacker</label>
+        <p class="legend">
+          <span class="item"><span class="swatch heat-danger-2"></span>Motståndaren attackerar mer</span>
+          <span class="item"><span class="swatch heat-even"></span>Lika</span>
+          <span class="item"><span class="swatch heat-safe-2"></span>Du har övertaget</span>
+        </p>
+      </div>
       <form id="move-form">
         <input
           id="move-input"
