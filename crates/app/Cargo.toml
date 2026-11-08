@@ -1,0 +1,22 @@
+[package]
+name = "chess-trainer-app"
+description = "Användningsfall för schacktränaren: parti, nivåanpassning, kunskapsbas och vyer."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+keywords = ["chess", "training"]
+categories = ["games"]
+readme = "../../README.md"
+
+[dependencies]
+chess-trainer-domain = { path = "../domain", version = "0.1.0" }
+chess-trainer-engine = { path = "../engine", version = "0.1.0" }
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+
+[lints]
+workspace = true

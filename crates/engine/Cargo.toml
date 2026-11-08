@@ -1,0 +1,20 @@
+[package]
+name = "chess-trainer-engine"
+description = "Schackmotor för tränaren: SAN, sökning på justerbar styrka, felbedömning."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+keywords = ["chess", "engine", "training"]
+categories = ["games"]
+readme = "../../README.md"
+
+[dependencies]
+cozy-chess = "=0.3.4"
+serde = { version = "=1.0.229", features = ["derive"] }
+
+[lints]
+workspace = true

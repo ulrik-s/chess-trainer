@@ -1,0 +1,35 @@
+[package]
+name = "chess-trainer-web"
+description = "Webbgränssnitt för schacktränaren, kompilerat till wasm."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+publish.workspace = true
+keywords = ["chess", "training", "wasm"]
+categories = ["games", "wasm"]
+readme = "../../README.md"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+chess-trainer-app = { path = "../app", version = "0.1.0" }
+js-sys = "=0.3.107"
+wasm-bindgen = "=0.2.130"
+web-sys = { version = "=0.3.107", features = [
+  "Document",
+  "DomTokenList",
+  "Element",
+  "Event",
+  "EventTarget",
+  "HtmlInputElement",
+  "Storage",
+  "Window",
+  "console",
+] }
+
+[lints]
+workspace = true
