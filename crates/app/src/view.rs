@@ -3,9 +3,11 @@
 //! Allt som byggs här kommer från våra egna data, aldrig från fri text som spelaren skrivit.
 //! Spelarens inmatning visas av webbcratet via `textContent`.
 
+use std::cmp::Ordering;
 use std::fmt::Write as _;
 
 use chess_trainer_domain::notation::to_swedish;
+use chess_trainer_engine::attacks::attackers;
 use chess_trainer_engine::describe::color_name;
 use chess_trainer_engine::{Board, Color, File, Piece, Rank, Square};
 
@@ -40,12 +42,22 @@ const fn piece_name(piece: Piece) -> &'static str {
     }
 }
 
-/// En ruta som knapp.
-fn square_html(board: &Board, square: Square, light: bool, selected: bool) -> String {
-    let mut classes = String::from(if light { "sq light" } else { "sq dark" });
-    if selected {
-        classes.push_str(" sel");
+/// Färgklass och skärmläsartext för hur attackerad en ruta är, ur spelarens perspektiv.
+/// `ours` och `theirs` är antalet attacker från spelaren och från motståndaren.
+fn heat(ours: u32, theirs: u32) -> (String, String) {
+    if ours == 0 && theirs == 0 {
+        return (String::new(), String::new());
     }
+    let class = match ours.cmp(&theirs) {
+        Ordering::Less => format!(" heat-danger-{}", theirs.saturating_sub(ours).min(3)),
+        Ordering::Greater => format!(" heat-safe-{}", ours.saturating_sub(theirs).min(3)),
+        Ordering::Equal => " heat-even".to_owned(),
+    };
+    (class, format!(", du {ours}, motståndaren {theirs}"))
+}
+
+/// En ruta som knapp. `label_suffix` läggs till skärmläsartexten.
+fn square_html(board: &Board, square: Square, classes: &str, label_suffix: &str) -> String {
     let (content, label) = match (board.piece_on(square), board.color_on(square)) {
         (Some(piece), Some(color)) => {
             let side = if color == Color::White { "w" } else { "b" };
@@ -65,13 +77,21 @@ fn square_html(board: &Board, square: Square, light: bool, selected: bool) -> St
         _ => (String::new(), square.to_string()),
     };
     format!(
-        "<button class=\"{classes}\" data-sq=\"{square}\" aria-label=\"{label}\">{content}</button>"
+        "<button class=\"{classes}\" data-sq=\"{square}\" aria-label=\"{label}{label_suffix}\">{content}</button>"
     )
 }
 
 /// Hela brädet. Vänt med svart nederst när `flipped` är sant.
+///
+/// Med `heat_for` färgas rutorna efter hur attackerade de är för den spelaren:
+/// röd där motståndaren har fler attacker, grön där spelaren har fler, gul vid lika.
 #[must_use]
-pub fn board_html(board: &Board, flipped: bool, selected: Option<Square>) -> String {
+pub fn board_html(
+    board: &Board,
+    flipped: bool,
+    selected: Option<Square>,
+    heat_for: Option<Color>,
+) -> String {
     let mut ranks: Vec<(usize, Rank)> = Rank::ALL.into_iter().enumerate().collect();
     let mut files: Vec<(usize, File)> = File::ALL.into_iter().enumerate().collect();
     if flipped {
@@ -84,7 +104,19 @@ pub fn board_html(board: &Board, flipped: bool, selected: Option<Square>) -> Str
         for (file_index, file) in &files {
             let square = Square::new(*file, *rank);
             let light = (rank_index ^ file_index) & 1 == 1;
-            out.push_str(&square_html(board, square, light, selected == Some(square)));
+            let mut classes = String::from(if light { "sq light" } else { "sq dark" });
+            if selected == Some(square) {
+                classes.push_str(" sel");
+            }
+            let suffix = heat_for.map_or_else(String::new, |player| {
+                let (class, label) = heat(
+                    attackers(board, square, player),
+                    attackers(board, square, !player),
+                );
+                classes.push_str(&class);
+                label
+            });
+            out.push_str(&square_html(board, square, &classes, &suffix));
         }
     }
     out
@@ -150,7 +182,7 @@ pub fn rating_svg(kb: &KnowledgeBase) -> String {
     reason = "testnamnen är dokumentationen"
 )]
 mod tests {
-    use super::{Board, Color, Square, board_html, move_list, rating_svg, status_text};
+    use super::{Board, Color, Square, board_html, heat, move_list, rating_svg, status_text};
     use crate::game::Game;
     use crate::knowledge::{GameRecord, KnowledgeBase, Score};
 
@@ -168,7 +200,7 @@ mod tests {
 
     #[test]
     fn board_has_sixty_four_squares_from_a8() {
-        let html = board_html(&Board::default(), false, None);
+        let html = board_html(&Board::default(), false, None, None);
         assert_eq!(html.matches("<button").count(), 64);
         assert!(html.starts_with(
             "<button class=\"sq light\" data-sq=\"a8\" aria-label=\"a8 svart torn\">"
@@ -181,7 +213,7 @@ mod tests {
 
     #[test]
     fn colours_alternate_and_a1_is_dark() {
-        let html = board_html(&Board::default(), false, None);
+        let html = board_html(&Board::default(), false, None, None);
         assert!(html.contains("class=\"sq dark\" data-sq=\"a1\""));
         assert!(html.contains("class=\"sq light\" data-sq=\"b1\""));
         assert!(html.contains("class=\"sq light\" data-sq=\"h1\""));
@@ -190,7 +222,7 @@ mod tests {
 
     #[test]
     fn flipped_board_starts_at_h1() {
-        let html = board_html(&Board::default(), true, None);
+        let html = board_html(&Board::default(), true, None, None);
         assert!(html.starts_with("<button class=\"sq light\" data-sq=\"h1\""));
         assert!(html.contains("class=\"sq dark\" data-sq=\"a1\""));
         assert!(html.ends_with(
@@ -200,7 +232,7 @@ mod tests {
 
     #[test]
     fn every_piece_type_is_drawn() {
-        let html = board_html(&Board::default(), false, None);
+        let html = board_html(&Board::default(), false, None, None);
         for (glyph, name) in [
             ('♟', "bonde"),
             ('♞', "springare"),
@@ -215,9 +247,49 @@ mod tests {
 
     #[test]
     fn selected_square_is_marked() {
-        let html = board_html(&Board::default(), false, Some(Square::E2));
+        let html = board_html(&Board::default(), false, Some(Square::E2), None);
         assert!(html.contains("class=\"sq light sel\" data-sq=\"e2\""));
         assert_eq!(html.matches(" sel").count(), 1);
+    }
+
+    #[test]
+    fn heat_classes_and_labels() {
+        assert_eq!(heat(0, 0), (String::new(), String::new()));
+        assert_eq!(heat(1, 1).0, " heat-even");
+        assert_eq!(heat(2, 1).0, " heat-safe-1");
+        assert_eq!(heat(5, 0).0, " heat-safe-3");
+        assert_eq!(heat(1, 3).0, " heat-danger-2");
+        assert_eq!(heat(0, 5).0, " heat-danger-3");
+        assert_eq!(heat(1, 2).1, ", du 1, motståndaren 2");
+    }
+
+    #[test]
+    fn heat_marks_squares_for_the_player() {
+        let html = board_html(
+            &Board::default(),
+            false,
+            Some(Square::E2),
+            Some(Color::White),
+        );
+        // f3: bönderna på e2 och g2 samt springaren på g1.
+        assert!(html.contains(
+            "class=\"sq light heat-safe-3\" data-sq=\"f3\" aria-label=\"f3, du 3, motståndaren 0\""
+        ));
+        // d3: bönderna på c2 och e2.
+        assert!(html.contains("class=\"sq light heat-safe-2\" data-sq=\"d3\""));
+        // e2 är vald och skyddas av kung, dam, löpare och springare.
+        assert!(html.contains("class=\"sq light sel heat-safe-3\" data-sq=\"e2\""));
+        // f6 är svarts ruta.
+        assert!(html.contains("class=\"sq dark heat-danger-3\" data-sq=\"f6\""));
+        // e4 attackeras inte av någon.
+        assert!(html.contains("class=\"sq light\" data-sq=\"e4\" aria-label=\"e4\""));
+    }
+
+    #[test]
+    fn heat_follows_the_players_colour() {
+        let html = board_html(&Board::default(), true, None, Some(Color::Black));
+        assert!(html.contains("class=\"sq dark heat-safe-3\" data-sq=\"f6\""));
+        assert!(html.contains("class=\"sq light heat-danger-3\" data-sq=\"f3\""));
     }
 
     #[test]
