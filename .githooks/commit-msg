@@ -1,0 +1,3 @@
+#!/bin/sh
+set -eu
+committed --commit-file "$1"

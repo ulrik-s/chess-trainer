@@ -1,0 +1,26 @@
+[files]
+extend-exclude = ["LICENSE", "Cargo.lock", "target/"]
+
+[default]
+locale = "en"
+
+# Dokumentation och kommentarer är på svenska. typos har ingen svensk ordlista,
+# så svenska ord som råkar likna engelska felstavningar vitlistas här.
+[default.extend-words]
+absolut = "absolut"
+alls = "alls"
+appen = "appen"
+databas = "databas"
+exempel = "exempel"
+faktor = "faktor"
+hel = "hel"
+lokal = "lokal"
+minut = "minut"
+plattform = "plattform"
+ser = "ser"
+som = "som"
+tak = "tak"
+tio = "tio"
+tre = "tre"
+vill = "vill"
+licens = "licens"
