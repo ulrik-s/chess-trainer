@@ -8,6 +8,7 @@ use std::cell::RefCell;
 
 use chess_trainer_app::game::{Game, MoveError, Turn};
 use chess_trainer_app::knowledge::{KnowledgeBase, advice};
+use chess_trainer_app::view::Marks;
 use chess_trainer_app::{Color, Square, to_swedish, view};
 use wasm_bindgen::prelude::*;
 use web_sys::{Document, Element, Event, HtmlInputElement, Storage};
@@ -17,6 +18,12 @@ const STORAGE_KEY: &str = "chess-trainer/kb";
 
 /// Hit flyttas en kunskapsbas som inte gick att läsa, så att den aldrig skrivs över.
 const BROKEN_KEY: &str = "chess-trainer/kb-trasig";
+
+/// Så länge motorn väntar innan den svarar, så att spelaren hinner se sitt eget drag.
+const ENGINE_DELAY_MS: i32 = 700;
+
+/// Text i rutan "Motorn tänker" innan motorn har gjort något drag.
+const THINKING_START: &str = "Gör ett drag så berättar jag hur jag tänker.";
 
 /// Så många rader av händelseloggen visas.
 const LOG_LINES: usize = 8;
@@ -35,6 +42,10 @@ struct State {
     can_save: bool,
     /// Färgas rutorna efter hur attackerade de är?
     show_heat: bool,
+    /// Ska senaste draget animeras vid nästa ritning? Nollställs efter varje ritning.
+    animate: bool,
+    /// Motorns kommentar till sitt senaste drag.
+    thinking: String,
 }
 
 thread_local! {
@@ -106,12 +117,14 @@ fn now() -> String {
 /// Ritar om allt från tillståndet.
 fn render(state: &State, doc: &Document) -> Result<(), JsValue> {
     let flipped = state.game.player() == Color::Black;
-    by_id(doc, "board")?.set_inner_html(&view::board_html(
-        state.game.board(),
-        flipped,
-        state.selected,
-        state.show_heat.then_some(state.game.player()),
-    ));
+    let marks = Marks {
+        selected: state.selected,
+        heat_for: state.show_heat.then_some(state.game.player()),
+        last_move: state.game.last_move(),
+        animate: state.animate,
+    };
+    by_id(doc, "board")?.set_inner_html(&view::board_html(state.game.board(), flipped, marks));
+    by_id(doc, "thinking")?.set_text_content(Some(&state.thinking));
     by_id(doc, "status")?.set_text_content(Some(&view::status_text(&state.game)));
     by_id(doc, "moves")?.set_text_content(Some(&view::move_list(state.game.moves())));
     let start = state.log.len().saturating_sub(LOG_LINES);
@@ -138,7 +151,9 @@ fn with_state(
     STATE.with_borrow_mut(|slot| {
         let state = slot.as_mut().ok_or_else(|| js_error("inte startad"))?;
         action(state, &doc)?;
-        render(state, &doc)
+        let rendered = render(state, &doc);
+        state.animate = false;
+        rendered
     })
 }
 
@@ -172,13 +187,54 @@ fn report(state: &mut State, result: Result<Turn, MoveError>) {
                     advice(mistake.kind),
                 ));
             }
-            if let Some(reply) = turn.reply {
-                state.log.push(format!("Motorn: {}", to_swedish(&reply)));
-            }
+            state.animate = true;
+            finish_if_over(state);
+            schedule_engine(state);
         }
         Err(error) => state.log.push(error.to_string()),
     }
-    finish_if_over(state);
+}
+
+/// Låter motorn svara efter en kort paus, om det är dess tur.
+fn schedule_engine(state: &State) {
+    if !state.game.engine_to_move() {
+        return;
+    }
+    let callback = Closure::once_into_js(|| {
+        // En äldre timer kan finnas kvar, till exempel efter ett nytt parti. Rita inte om i onödan.
+        let engine_turn_now =
+            STATE.with_borrow(|slot| slot.as_ref().is_some_and(|s| s.game.engine_to_move()));
+        if !engine_turn_now {
+            return;
+        }
+        if let Err(error) = with_state(|current, _| {
+            engine_turn(current);
+            Ok(())
+        }) {
+            web_sys::console::error_1(&error);
+        }
+    });
+    let scheduled = web_sys::window().map(|window| {
+        window.set_timeout_with_callback_and_timeout_and_arguments_0(
+            callback.unchecked_ref(),
+            ENGINE_DELAY_MS,
+        )
+    });
+    if let Some(Err(error)) = scheduled {
+        web_sys::console::error_1(&error);
+    }
+}
+
+/// Motorns drag: spela, förklara och animera.
+fn engine_turn(state: &mut State) {
+    if let Some(reply) = state.game.engine_move() {
+        state
+            .log
+            .push(format!("Motorn: {}", to_swedish(&reply.san)));
+        state.thinking = reply.comment;
+        state.animate = true;
+        finish_if_over(state);
+    }
 }
 
 /// Klick på brädet: första klicket väljer pjäs, andra flyttar den.
@@ -234,12 +290,11 @@ fn new_game(player: Color) -> Result<(), JsValue> {
         }
         state.game = Game::new(player, state.kb.rating, seed());
         state.selected = None;
+        THINKING_START.clone_into(&mut state.thinking);
         state
             .log
             .push(format!("Nytt parti. {}", view::status_text(&state.game)));
-        if let Some(first) = state.game.moves().first() {
-            state.log.push(format!("Motorn: {}", to_swedish(first)));
-        }
+        schedule_engine(state);
         Ok(())
     })
 }
@@ -308,6 +363,8 @@ pub fn start() -> Result<(), JsValue> {
         log,
         can_save,
         show_heat: true,
+        animate: false,
+        thinking: THINKING_START.to_owned(),
     };
     render(&state, &doc)?;
     STATE.with_borrow_mut(|slot| *slot = Some(state));

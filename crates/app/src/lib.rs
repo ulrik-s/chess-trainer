@@ -4,6 +4,7 @@
 //! rating, kunskapsbasen som sparas i webbläsaren och HTML-vyerna. Webbcratet
 //! kopplar bara ihop det här med DOM och `localStorage`.
 
+pub mod commentary;
 pub mod game;
 pub mod knowledge;
 pub mod level;

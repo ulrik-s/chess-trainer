@@ -34,7 +34,7 @@ fn is_short_castle(mv: Move) -> bool {
 }
 
 /// Är draget en rockad, dvs. flyttar kungen till en ruta med ett eget torn?
-fn is_castle(board: &Board, mv: Move) -> bool {
+pub(crate) fn is_castle(board: &Board, mv: Move) -> bool {
     board.piece_on(mv.from) == Some(Piece::King)
         && board.color_on(mv.to) == Some(board.side_to_move())
 }

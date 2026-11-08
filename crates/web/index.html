@@ -75,7 +75,6 @@
         margin: 0;
         min-width: 0;
         min-height: 0;
-        overflow: hidden;
         color: inherit;
         -webkit-tap-highlight-color: transparent;
         font-size: min(9vw, 46px);
@@ -155,6 +154,30 @@
       }
       .pc {
         font-family: "Apple Symbols", "Segoe UI Symbol", "DejaVu Sans", sans-serif;
+        /* Pjäsen fyller rutan, så att glidningen kan räknas i hela rutor. */
+        width: 100%;
+        height: 100%;
+        display: grid;
+        place-items: center;
+      }
+      .last {
+        outline: 3px solid rgba(255, 196, 0, 0.9);
+        outline-offset: -3px;
+      }
+      .slide {
+        position: relative;
+        z-index: 1;
+        animation: slide 450ms ease-in-out;
+      }
+      @keyframes slide {
+        from {
+          transform: translate(calc(var(--dx) * 100%), calc(var(--dy) * 100%));
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .slide {
+          animation: none;
+        }
       }
       .pc.w {
         color: #fff;
@@ -201,6 +224,9 @@
       h2 {
         font-size: 1rem;
         margin: 0 0 6px;
+      }
+      #thinking {
+        margin: 0;
       }
       #moves,
       #log {
@@ -254,6 +280,10 @@
         <button class="action" id="describe" type="button">Beskriv ställningen</button>
         <button class="action" id="resign" type="button">Ge upp</button>
       </div>
+      <section>
+        <h2>Motorn tänker</h2>
+        <p id="thinking" aria-live="polite"></p>
+      </section>
       <section>
         <h2>Händelser</h2>
         <p id="log" aria-live="polite"></p>

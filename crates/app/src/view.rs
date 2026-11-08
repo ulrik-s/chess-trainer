@@ -56,8 +56,51 @@ fn heat(ours: u32, theirs: u32) -> (String, String) {
     (class, format!(", du {ours}, motståndaren {theirs}"))
 }
 
-/// En ruta som knapp. `label_suffix` läggs till skärmläsartexten.
-fn square_html(board: &Board, square: Square, classes: &str, label_suffix: &str) -> String {
+/// Det som ska markeras på brädet utöver pjäserna.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Marks {
+    /// Rutan spelaren har valt att flytta från.
+    pub selected: Option<Square>,
+    /// Färga rutorna efter hur attackerade de är för den här spelaren.
+    pub heat_for: Option<Color>,
+    /// Senaste dragets från- och till-ruta.
+    pub last_move: Option<(Square, Square)>,
+    /// Låt pjäsen i senaste draget glida från sin gamla ruta.
+    pub animate: bool,
+}
+
+/// Rutans position på skärmen som (kolumn, rad), räknat från övre vänstra hörnet.
+fn screen(square: Square, flipped: bool) -> (i32, i32) {
+    let index = |found: Option<usize>| i32::try_from(found.unwrap_or(0)).unwrap_or(0);
+    let file = index(File::ALL.iter().position(|f| *f == square.file()));
+    let rank = index(Rank::ALL.iter().position(|r| *r == square.rank()));
+    if flipped {
+        (7_i32.saturating_sub(file), rank)
+    } else {
+        (file, 7_i32.saturating_sub(rank))
+    }
+}
+
+/// Hur många rutor pjäsen ska glida, från `from` till `to`, i skärmens riktning.
+fn slide(from: Square, to: Square, flipped: bool) -> (i32, i32) {
+    let (from_col, from_row) = screen(from, flipped);
+    let (to_col, to_row) = screen(to, flipped);
+    (
+        from_col.saturating_sub(to_col),
+        from_row.saturating_sub(to_row),
+    )
+}
+
+/// Det som läggs till en ruta utöver klasserna.
+struct Extra {
+    /// Läggs till skärmläsartexten.
+    label_suffix: String,
+    /// Hur många rutor pjäsen ska glida in från, om den ska animeras.
+    motion: Option<(i32, i32)>,
+}
+
+/// En ruta som knapp.
+fn square_html(board: &Board, square: Square, classes: &str, extra: &Extra) -> String {
     let (content, label) = match (board.piece_on(square), board.color_on(square)) {
         (Some(piece), Some(color)) => {
             let side = if color == Color::White { "w" } else { "b" };
@@ -66,9 +109,12 @@ fn square_html(board: &Board, square: Square, classes: &str, label_suffix: &str)
                 color_name(color).to_lowercase(),
                 piece_name(piece)
             );
+            let slide_attrs = extra.motion.map_or_else(String::new, |(dx, dy)| {
+                format!(" slide\" style=\"--dx:{dx};--dy:{dy}")
+            });
             (
                 format!(
-                    "<span class=\"pc {side}\">{}{TEXT_PRESENTATION}</span>",
+                    "<span class=\"pc {side}{slide_attrs}\">{}{TEXT_PRESENTATION}</span>",
                     glyph(piece)
                 ),
                 name,
@@ -77,21 +123,17 @@ fn square_html(board: &Board, square: Square, classes: &str, label_suffix: &str)
         _ => (String::new(), square.to_string()),
     };
     format!(
-        "<button class=\"{classes}\" data-sq=\"{square}\" aria-label=\"{label}{label_suffix}\">{content}</button>"
+        "<button class=\"{classes}\" data-sq=\"{square}\" aria-label=\"{label}{}\">{content}</button>",
+        extra.label_suffix
     )
 }
 
 /// Hela brädet. Vänt med svart nederst när `flipped` är sant.
 ///
-/// Med `heat_for` färgas rutorna efter hur attackerade de är för den spelaren:
+/// Med `marks.heat_for` färgas rutorna efter hur attackerade de är för den spelaren:
 /// röd där motståndaren har fler attacker, grön där spelaren har fler, gul vid lika.
 #[must_use]
-pub fn board_html(
-    board: &Board,
-    flipped: bool,
-    selected: Option<Square>,
-    heat_for: Option<Color>,
-) -> String {
+pub fn board_html(board: &Board, flipped: bool, marks: Marks) -> String {
     let mut ranks: Vec<(usize, Rank)> = Rank::ALL.into_iter().enumerate().collect();
     let mut files: Vec<(usize, File)> = File::ALL.into_iter().enumerate().collect();
     if flipped {
@@ -105,10 +147,16 @@ pub fn board_html(
             let square = Square::new(*file, *rank);
             let light = (rank_index ^ file_index) & 1 == 1;
             let mut classes = String::from(if light { "sq light" } else { "sq dark" });
-            if selected == Some(square) {
+            if marks.selected == Some(square) {
                 classes.push_str(" sel");
             }
-            let suffix = heat_for.map_or_else(String::new, |player| {
+            if marks
+                .last_move
+                .is_some_and(|(from, to)| square == from || square == to)
+            {
+                classes.push_str(" last");
+            }
+            let label_suffix = marks.heat_for.map_or_else(String::new, |player| {
                 let (class, label) = heat(
                     attackers(board, square, player),
                     attackers(board, square, !player),
@@ -116,7 +164,15 @@ pub fn board_html(
                 classes.push_str(&class);
                 label
             });
-            out.push_str(&square_html(board, square, &classes, &suffix));
+            let motion = marks
+                .last_move
+                .filter(|(_, to)| marks.animate && *to == square)
+                .map(|(from, to)| slide(from, to, flipped));
+            let extra = Extra {
+                label_suffix,
+                motion,
+            };
+            out.push_str(&square_html(board, square, &classes, &extra));
         }
     }
     out
@@ -182,7 +238,9 @@ pub fn rating_svg(kb: &KnowledgeBase) -> String {
     reason = "testnamnen är dokumentationen"
 )]
 mod tests {
-    use super::{Board, Color, Square, board_html, heat, move_list, rating_svg, status_text};
+    use super::{
+        Board, Color, Marks, Square, board_html, heat, move_list, rating_svg, slide, status_text,
+    };
     use crate::game::Game;
     use crate::knowledge::{GameRecord, KnowledgeBase, Score};
 
@@ -200,7 +258,7 @@ mod tests {
 
     #[test]
     fn board_has_sixty_four_squares_from_a8() {
-        let html = board_html(&Board::default(), false, None, None);
+        let html = board_html(&Board::default(), false, Marks::default());
         assert_eq!(html.matches("<button").count(), 64);
         assert!(html.starts_with(
             "<button class=\"sq light\" data-sq=\"a8\" aria-label=\"a8 svart torn\">"
@@ -213,7 +271,7 @@ mod tests {
 
     #[test]
     fn colours_alternate_and_a1_is_dark() {
-        let html = board_html(&Board::default(), false, None, None);
+        let html = board_html(&Board::default(), false, Marks::default());
         assert!(html.contains("class=\"sq dark\" data-sq=\"a1\""));
         assert!(html.contains("class=\"sq light\" data-sq=\"b1\""));
         assert!(html.contains("class=\"sq light\" data-sq=\"h1\""));
@@ -222,7 +280,7 @@ mod tests {
 
     #[test]
     fn flipped_board_starts_at_h1() {
-        let html = board_html(&Board::default(), true, None, None);
+        let html = board_html(&Board::default(), true, Marks::default());
         assert!(html.starts_with("<button class=\"sq light\" data-sq=\"h1\""));
         assert!(html.contains("class=\"sq dark\" data-sq=\"a1\""));
         assert!(html.ends_with(
@@ -232,7 +290,7 @@ mod tests {
 
     #[test]
     fn every_piece_type_is_drawn() {
-        let html = board_html(&Board::default(), false, None, None);
+        let html = board_html(&Board::default(), false, Marks::default());
         for (glyph, name) in [
             ('♟', "bonde"),
             ('♞', "springare"),
@@ -247,7 +305,14 @@ mod tests {
 
     #[test]
     fn selected_square_is_marked() {
-        let html = board_html(&Board::default(), false, Some(Square::E2), None);
+        let html = board_html(
+            &Board::default(),
+            false,
+            Marks {
+                selected: Some(Square::E2),
+                ..Marks::default()
+            },
+        );
         assert!(html.contains("class=\"sq light sel\" data-sq=\"e2\""));
         assert_eq!(html.matches(" sel").count(), 1);
     }
@@ -268,8 +333,11 @@ mod tests {
         let html = board_html(
             &Board::default(),
             false,
-            Some(Square::E2),
-            Some(Color::White),
+            Marks {
+                selected: Some(Square::E2),
+                heat_for: Some(Color::White),
+                ..Marks::default()
+            },
         );
         // f3: bönderna på e2 och g2 samt springaren på g1.
         assert!(html.contains(
@@ -287,9 +355,59 @@ mod tests {
 
     #[test]
     fn heat_follows_the_players_colour() {
-        let html = board_html(&Board::default(), true, None, Some(Color::Black));
+        let html = board_html(
+            &Board::default(),
+            true,
+            Marks {
+                heat_for: Some(Color::Black),
+                ..Marks::default()
+            },
+        );
         assert!(html.contains("class=\"sq dark heat-safe-3\" data-sq=\"f6\""));
         assert!(html.contains("class=\"sq light heat-danger-3\" data-sq=\"f3\""));
+    }
+
+    #[test]
+    fn last_move_is_marked_and_slides_when_animated() {
+        let board: Board = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1"
+            .parse()
+            .unwrap();
+        let last = Marks {
+            last_move: Some((Square::E2, Square::E4)),
+            ..Marks::default()
+        };
+        let html = board_html(&board, false, last);
+        assert!(html.contains("class=\"sq light last\" data-sq=\"e2\""));
+        assert!(html.contains("class=\"sq light last\" data-sq=\"e4\""));
+        assert!(!html.contains("slide"));
+        let animated = board_html(
+            &board,
+            false,
+            Marks {
+                animate: true,
+                ..last
+            },
+        );
+        assert!(animated.contains("<span class=\"pc w slide\" style=\"--dx:0;--dy:2\">♟"));
+        assert_eq!(animated.matches("slide").count(), 1);
+        let flipped = board_html(
+            &board,
+            true,
+            Marks {
+                animate: true,
+                ..last
+            },
+        );
+        assert!(flipped.contains("style=\"--dx:0;--dy:-2\""));
+    }
+
+    #[test]
+    fn slide_direction_follows_the_screen() {
+        // Springare g1-f3: en kolumn åt höger och två rader ner, sett från f3.
+        assert_eq!(slide(Square::G1, Square::F3, false), (1, 2));
+        assert_eq!(slide(Square::G1, Square::F3, true), (-1, -2));
+        assert_eq!(slide(Square::A8, Square::H1, false), (-7, -7));
+        assert_eq!(slide(Square::E4, Square::E4, false), (0, 0));
     }
 
     #[test]

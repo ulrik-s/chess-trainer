@@ -5,10 +5,11 @@ use std::fmt;
 use chess_trainer_domain::notation::to_san;
 use chess_trainer_engine::describe::describe;
 use chess_trainer_engine::mistakes::{Mistake, assess};
-use chess_trainer_engine::san::{from_squares, parse_san, san};
-use chess_trainer_engine::search::{Rng, choose_move};
+use chess_trainer_engine::san::{from_squares, landing_square, parse_san, san};
+use chess_trainer_engine::search::{Rng, choose};
 use chess_trainer_engine::{Board, Color, GameStatus, Move, Square};
 
+use crate::commentary::comment;
 use crate::knowledge::{GameRecord, MistakeRecord, Score};
 use crate::level::{Level, level_for};
 
@@ -21,6 +22,8 @@ pub enum MoveError {
     Illegal,
     /// Partiet är redan slut.
     GameOver,
+    /// Det är motorns tur.
+    NotYourTurn,
 }
 
 impl fmt::Display for MoveError {
@@ -31,6 +34,7 @@ impl fmt::Display for MoveError {
             }
             Self::Illegal => "Det draget går inte i den här ställningen.",
             Self::GameOver => "Partiet är slut. Starta ett nytt.",
+            Self::NotYourTurn => "Vänta, motorn tänker.",
         })
     }
 }
@@ -42,8 +46,15 @@ pub struct Turn {
     pub played: String,
     /// Felet, om draget var ett tydligt fel.
     pub mistake: Option<Mistake>,
-    /// Motorns svar i SAN, om partiet fortsätter.
-    pub reply: Option<String>,
+}
+
+/// Motorns drag, med kommentaren om hur den tänkte.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EngineMove {
+    /// Draget i SAN.
+    pub san: String,
+    /// Motorns förklaring i första person.
+    pub comment: String,
 }
 
 /// Ett pågående eller avslutat parti.
@@ -65,13 +76,15 @@ pub struct Game {
     resigned: bool,
     /// Har partiet redan sparats i kunskapsbasen?
     recorded: bool,
+    /// Senaste dragets från- och till-ruta, så som en människa ser dem.
+    last_move: Option<(Square, Square)>,
 }
 
 impl Game {
-    /// Nytt parti. Spelar spelaren svart gör motorn första draget direkt.
+    /// Nytt parti. Spelar spelaren svart börjar motorn, via [`Game::engine_move`].
     #[must_use]
     pub fn new(player: Color, rating: f64, seed: u64) -> Self {
-        let mut game = Self {
+        Self {
             board: Board::default(),
             moves: Vec::new(),
             player,
@@ -80,11 +93,8 @@ impl Game {
             mistakes: Vec::new(),
             resigned: false,
             recorded: false,
-        };
-        if player == Color::Black {
-            game.reply();
+            last_move: None,
         }
-        game
     }
 
     /// Parti från en given ställning, för tester.
@@ -120,6 +130,18 @@ impl Game {
         self.level
     }
 
+    /// Senaste dragets från- och till-ruta. Vid rockad är det kungens rutor.
+    #[must_use]
+    pub const fn last_move(&self) -> Option<(Square, Square)> {
+        self.last_move
+    }
+
+    /// Är det motorns tur att dra?
+    #[must_use]
+    pub fn engine_to_move(&self) -> bool {
+        !self.is_over() && self.board.side_to_move() != self.player
+    }
+
     /// Är partiet slut?
     #[must_use]
     pub fn is_over(&self) -> bool {
@@ -129,11 +151,9 @@ impl Game {
     /// Spelar ett drag skrivet i svensk eller engelsk notation.
     ///
     /// # Errors
-    /// Om texten inte är ett drag, draget är olagligt eller partiet är slut.
+    /// Om texten inte är ett drag, draget är olagligt, partiet är slut eller det är motorns tur.
     pub fn play(&mut self, input: &str) -> Result<Turn, MoveError> {
-        if self.is_over() {
-            return Err(MoveError::GameOver);
-        }
+        self.check_turn()?;
         let wanted = to_san(input).ok_or(MoveError::Unrecognised)?;
         let mv = parse_san(&self.board, &wanted).ok_or(MoveError::Illegal)?;
         Ok(self.apply(mv))
@@ -142,16 +162,25 @@ impl Game {
     /// Spelar draget från `from` till `to`, som när spelaren klickar på brädet.
     ///
     /// # Errors
-    /// Om draget är olagligt eller partiet är slut.
+    /// Om draget är olagligt, partiet är slut eller det är motorns tur.
     pub fn play_squares(&mut self, from: Square, to: Square) -> Result<Turn, MoveError> {
-        if self.is_over() {
-            return Err(MoveError::GameOver);
-        }
+        self.check_turn()?;
         let mv = from_squares(&self.board, from, to).ok_or(MoveError::Illegal)?;
         Ok(self.apply(mv))
     }
 
-    /// Bedömer, spelar och låter motorn svara.
+    /// Får spelaren dra just nu?
+    fn check_turn(&self) -> Result<(), MoveError> {
+        if self.is_over() {
+            Err(MoveError::GameOver)
+        } else if self.engine_to_move() {
+            Err(MoveError::NotYourTurn)
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Bedömer och spelar spelarens drag. Motorn svarar först vid [`Game::engine_move`].
     fn apply(&mut self, mv: Move) -> Turn {
         let mistake = assess(&self.board, mv);
         if let Some(found) = &mistake {
@@ -163,28 +192,28 @@ impl Game {
             });
         }
         let played = self.push(mv);
-        let reply = self.reply();
-        Turn {
-            played,
-            mistake,
-            reply,
-        }
+        Turn { played, mistake }
     }
 
     /// Spelar ett drag på brädet och returnerar det i SAN.
     fn push(&mut self, mv: Move) -> String {
         let text = san(&self.board, mv);
+        self.last_move = Some((mv.from, landing_square(&self.board, mv)));
         self.board.play_unchecked(mv);
         self.moves.push(text.clone());
         text
     }
 
-    /// Motorns drag, om partiet fortsätter.
-    fn reply(&mut self) -> Option<String> {
-        if self.is_over() {
+    /// Motorns drag och kommentar, om det är motorns tur.
+    pub fn engine_move(&mut self) -> Option<EngineMove> {
+        if !self.engine_to_move() {
             return None;
         }
-        choose_move(&self.board, self.level.strength, &mut self.rng).map(|mv| self.push(mv))
+        choose(&self.board, self.level.strength, &mut self.rng).map(|choice| {
+            let comment = comment(&self.board, &choice);
+            let san = self.push(choice.mv);
+            EngineMove { san, comment }
+        })
     }
 
     /// Spelaren ger upp.
@@ -259,9 +288,20 @@ mod tests {
 
     #[test]
     fn engine_moves_first_when_player_is_black() {
-        let game = Game::new(Color::Black, 1000.0, 1);
-        assert_eq!(game.moves().len(), 1);
+        let mut game = Game::new(Color::Black, 1000.0, 1);
+        assert!(game.moves().is_empty());
+        assert!(game.engine_to_move());
+        assert_eq!(game.play("e5"), Err(MoveError::NotYourTurn));
+        assert_eq!(
+            game.play_squares(Square::E7, Square::E5),
+            Err(MoveError::NotYourTurn)
+        );
+        let reply = game.engine_move().unwrap();
+        assert!(reply.comment.starts_with("Jag spelar "));
+        assert_eq!(game.moves(), [reply.san]);
         assert_eq!(game.board().side_to_move(), Color::Black);
+        assert!(!game.engine_to_move());
+        assert_eq!(game.engine_move(), None);
     }
 
     #[test]
@@ -269,8 +309,15 @@ mod tests {
         let mut game = Game::new(Color::White, 1000.0, 1);
         let turn = game.play("springare f3").unwrap();
         assert_eq!(turn.played, "Nf3");
-        assert!(turn.reply.is_some());
         assert_eq!(turn.mistake, None);
+        assert_eq!(game.last_move(), Some((Square::G1, Square::F3)));
+        assert!(game.engine_to_move());
+        let reply = game.engine_move().unwrap();
+        assert!(
+            reply
+                .comment
+                .contains(&chess_trainer_domain::notation::to_swedish(&reply.san))
+        );
         assert_eq!(game.moves().len(), 2);
         assert_eq!(game.board().side_to_move(), Color::White);
     }
@@ -304,6 +351,7 @@ mod tests {
         );
         assert!(MoveError::Illegal.to_string().contains("går inte"));
         assert!(MoveError::GameOver.to_string().contains("slut"));
+        assert_eq!(MoveError::NotYourTurn.to_string(), "Vänta, motorn tänker.");
     }
 
     #[test]
@@ -321,14 +369,22 @@ mod tests {
         let mut game = game_from("6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1", Color::White);
         let turn = game.play("Ta8").unwrap();
         assert_eq!(turn.played, "Ra8#");
-        assert_eq!(turn.reply, None);
         assert!(game.is_over());
+        assert!(!game.engine_to_move());
+        assert_eq!(game.engine_move(), None);
         assert_eq!(game.score(), Some(Score::Win));
         assert_eq!(game.play("Kd1"), Err(MoveError::GameOver));
         assert_eq!(
             game.play_squares(Square::E1, Square::D1),
             Err(MoveError::GameOver)
         );
+    }
+
+    #[test]
+    fn castling_reports_the_king_squares() {
+        let mut game = game_from("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1", Color::White);
+        game.play("0-0").unwrap();
+        assert_eq!(game.last_move(), Some((Square::E1, Square::G1)));
     }
 
     #[test]
@@ -353,7 +409,7 @@ mod tests {
         let record = game.take_record("2026-11-08".to_owned()).unwrap();
         assert_eq!(record.score, Score::Loss);
         assert!(record.player_white);
-        assert_eq!(record.moves.len(), 2);
+        assert_eq!(record.moves.len(), 1);
         assert_eq!(record.played_at, "2026-11-08");
         assert!((record.opponent_rating - 1000.0).abs() < f64::EPSILON);
         assert_eq!(game.take_record("igen".to_owned()), None);

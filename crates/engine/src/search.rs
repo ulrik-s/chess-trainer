@@ -174,18 +174,33 @@ impl Rng {
     }
 }
 
+/// Motorns val: draget och vad den tyckte om alla alternativ.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Choice {
+    /// Det valda draget.
+    pub mv: Move,
+    /// Värdet av det valda draget, ur motorns perspektiv.
+    pub score: i32,
+    /// Alla lagliga drag med sina värden, bästa först.
+    pub scored: Vec<(Move, i32)>,
+}
+
 /// Väljer motorns drag. `None` om det inte finns något lagligt drag.
 #[must_use]
-pub fn choose_move(board: &Board, strength: Strength, rng: &mut Rng) -> Option<Move> {
-    let scored = score_moves(board, strength.depth.max(1));
-    let best = scored.iter().map(|(_, score)| *score).max()?;
+pub fn choose(board: &Board, strength: Strength, rng: &mut Rng) -> Option<Choice> {
+    let mut scored = score_moves(board, strength.depth.max(1));
+    scored.sort_by_key(|(_, score)| std::cmp::Reverse(*score));
+    let best = scored.first()?.1;
     let floor = best.saturating_sub(strength.noise);
-    let candidates: Vec<Move> = scored
-        .into_iter()
+    let candidates: Vec<(Move, i32)> = scored
+        .iter()
+        .copied()
         .filter(|(_, score)| *score >= floor)
-        .map(|(mv, _)| mv)
         .collect();
-    candidates.get(rng.index(candidates.len())).copied()
+    // Bästa draget finns alltid bland kandidaterna, så listan är aldrig tom.
+    candidates
+        .get(rng.index(candidates.len()))
+        .map(|&(mv, score)| Choice { mv, score, scored })
 }
 
 #[cfg(test)]
@@ -196,7 +211,7 @@ pub fn choose_move(board: &Board, strength: Strength, rng: &mut Rng) -> Option<M
 )]
 mod tests {
     use super::{
-        Board, MATE, Piece, Rng, Strength, choose_move, evaluate, quiescence, score_moves, value,
+        Board, MATE, Piece, Rng, Strength, choose, evaluate, quiescence, score_moves, value,
     };
 
     fn board(fen: &str) -> Board {
@@ -328,7 +343,7 @@ mod tests {
         let b = board(fen);
         let strength = Strength { depth: 2, noise: 0 };
         for seed in 1..20 {
-            let mv = choose_move(&b, strength, &mut Rng::new(seed)).unwrap();
+            let mv = choose(&b, strength, &mut Rng::new(seed)).unwrap().mv;
             assert_eq!(mv, "d1d5".parse().unwrap());
         }
     }
@@ -341,16 +356,32 @@ mod tests {
             noise: 1000,
         };
         let mut rng = Rng::new(7);
-        let first = choose_move(&b, strength, &mut rng).unwrap();
-        let differs = (0..50).any(|_| choose_move(&b, strength, &mut rng).unwrap() != first);
+        let first = choose(&b, strength, &mut rng).unwrap().mv;
+        let differs = (0..50).any(|_| choose(&b, strength, &mut rng).unwrap().mv != first);
         assert!(differs);
+    }
+
+    #[test]
+    fn choice_reports_scores_best_first() {
+        // Svart torn på d5 hänger: Dxd5 är bäst och står först.
+        let fen = "4k3/8/8/3r4/8/8/8/3QK3 w - - 0 1";
+        let choice = choose(
+            &board(fen),
+            Strength { depth: 2, noise: 0 },
+            &mut Rng::new(1),
+        )
+        .unwrap();
+        assert_eq!(choice.mv, "d1d5".parse().unwrap());
+        assert_eq!(choice.scored[0], (choice.mv, choice.score));
+        assert!(choice.scored.windows(2).all(|w| w[0].1 >= w[1].1));
+        assert_eq!(choice.scored.len(), 17);
     }
 
     #[test]
     fn depth_zero_is_treated_as_one() {
         let fen = "6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1";
         let strength = Strength { depth: 0, noise: 0 };
-        let mv = choose_move(&board(fen), strength, &mut Rng::new(1)).unwrap();
+        let mv = choose(&board(fen), strength, &mut Rng::new(1)).unwrap().mv;
         assert_eq!(mv, "a1a8".parse().unwrap());
     }
 
@@ -358,7 +389,7 @@ mod tests {
     fn no_move_when_game_is_over() {
         let mated = board("R5k1/5ppp/8/8/8/8/8/4K3 b - - 0 1");
         let strength = Strength { depth: 1, noise: 0 };
-        assert_eq!(choose_move(&mated, strength, &mut Rng::new(1)), None);
+        assert_eq!(choose(&mated, strength, &mut Rng::new(1)), None);
     }
 
     #[test]
