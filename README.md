@@ -38,6 +38,9 @@ En webbapp i Rust, kompilerad till wasm. Allt körs i webbläsaren och kunskapsb
 - Reglerna kommer från schackbiblioteket `cozy-chess` (MIT), aldrig från Claude. `shakmaty` valdes bort eftersom det är GPL.
 - En egen motor i Rust spelar på din nivå. Den söker 1–3 halvdrag och väljer slumpvis bland drag som är nästan lika bra.
 - "Beskriv ställningen" läser upp pjäserna i ord, för blindspel.
+- Dragen animeras. Motorn väntar en stund innan den svarar och visar sitt drag med en glidning, och senaste draget markeras.
+- Rutorna kan färgas efter hur attackerade de är: röd där motståndaren har övertaget, grön där du har det, gul vid lika.
+- Motorn kommenterar varje drag i första person: vad draget gör, hur den bedömer ställningen och vilka drag den övervägde. Väljer den ett sämre drag än det bästa den såg säger den det, så att du kan straffa det.
 
 **Lära**
 - Varje drag du gör bedöms. Tappar du mer än en och en halv bonde får du veta vad som var bättre och vilken sorts fel det var: hängande pjäs, missat slag eller missat hot.
@@ -50,7 +53,7 @@ En webbapp i Rust, kompilerad till wasm. Allt körs i webbläsaren och kunskapsb
 
 **Inte med än**
 - **Röststyrning.** Läggs till om du vill spela utan att titta på skärmen.
-- **Kommentarer från Claude.** Felbedömningen är regelbaserad i dag. Claude kan kopplas in senare för förklaringar i fritext.
+- **Kommentarer från Claude.** Motorns kommentarer och felbedömningen är regelbaserade i dag. Claude kan kopplas in senare för förklaringar i fritext.
 - **Kalibrering.** Nivåernas Elo-värden är gissningar. Spela mot chess.com-botar på känd nivå och justera tabellen i `crates/app/src/level.rs`.
 
 ## Spela lokalt

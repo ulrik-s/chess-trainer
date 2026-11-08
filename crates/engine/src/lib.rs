@@ -6,6 +6,7 @@
 
 pub mod attacks;
 pub mod describe;
+pub mod explain;
 pub mod mistakes;
 pub mod san;
 pub mod search;

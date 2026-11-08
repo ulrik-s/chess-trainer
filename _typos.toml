@@ -36,3 +36,5 @@ vyer = "vyer"
 # Schacknotation, som Nd2.
 nd = "nd"
 attackeras = "attackeras"
+alternativ = "alternativ"
+markeras = "markeras"
