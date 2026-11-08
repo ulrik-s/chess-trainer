@@ -12,6 +12,10 @@ use chess_trainer_engine::{Board, Color, File, Piece, Rank, Square};
 use crate::game::Game;
 use crate::knowledge::{KnowledgeBase, Score};
 
+/// Variationsväljare som ber om textform. Utan den ritar iOS bonden ♟ som en svart emoji,
+/// och då går färgen inte att ändra med CSS.
+const TEXT_PRESENTATION: char = '\u{FE0E}';
+
 /// Unicode-tecken för en pjäs. Samma fyllda tecken för båda färgerna; färgen sätts med CSS.
 const fn glyph(piece: Piece) -> char {
     match piece {
@@ -51,7 +55,10 @@ fn square_html(board: &Board, square: Square, light: bool, selected: bool) -> St
                 piece_name(piece)
             );
             (
-                format!("<span class=\"pc {side}\">{}</span>", glyph(piece)),
+                format!(
+                    "<span class=\"pc {side}\">{}{TEXT_PRESENTATION}</span>",
+                    glyph(piece)
+                ),
                 name,
             )
         }
@@ -167,7 +174,7 @@ mod tests {
             "<button class=\"sq light\" data-sq=\"a8\" aria-label=\"a8 svart torn\">"
         ));
         assert!(html.ends_with(
-            "data-sq=\"h1\" aria-label=\"h1 vit torn\"><span class=\"pc w\">♜</span></button>"
+            "data-sq=\"h1\" aria-label=\"h1 vit torn\"><span class=\"pc w\">♜\u{FE0E}</span></button>"
         ));
         assert!(html.contains("aria-label=\"e4\"></button>"));
     }
@@ -187,7 +194,7 @@ mod tests {
         assert!(html.starts_with("<button class=\"sq light\" data-sq=\"h1\""));
         assert!(html.contains("class=\"sq dark\" data-sq=\"a1\""));
         assert!(html.ends_with(
-            "data-sq=\"a8\" aria-label=\"a8 svart torn\"><span class=\"pc b\">♜</span></button>"
+            "data-sq=\"a8\" aria-label=\"a8 svart torn\"><span class=\"pc b\">♜\u{FE0E}</span></button>"
         ));
     }
 
@@ -201,7 +208,7 @@ mod tests {
             ('♛', "dam"),
             ('♚', "kung"),
         ] {
-            assert!(html.contains(glyph));
+            assert!(html.contains(&format!("{glyph}\u{FE0E}</span>")));
             assert!(html.contains(name));
         }
     }
