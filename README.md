@@ -2,6 +2,8 @@
 
 En personlig schacktränare: spela mot Claude, bygg upp en kunskapsbas om mina styrkor och svagheter, och se hur jag blir bättre över tid. Skriven i Rust.
 
+**Spela:** https://ulrik-s.github.io/chess-trainer/ (publiceras automatiskt från main).
+
 ## Bakgrund
 
 Idén kom ur en chatt med Claude (se [docs/ursprunglig-chatt.md](docs/ursprunglig-chatt.md)). Kort sammanfattat:
@@ -52,6 +54,8 @@ En webbapp i Rust, kompilerad till wasm. Allt körs i webbläsaren och kunskapsb
 - **Kalibrering.** Nivåernas Elo-värden är gissningar. Spela mot chess.com-botar på känd nivå och justera tabellen i `crates/app/src/level.rs`.
 
 ## Spela lokalt
+
+Den publicerade versionen finns på https://ulrik-s.github.io/chess-trainer/. Lokalt:
 
 ```sh
 make serve   # öppna http://127.0.0.1:8080
