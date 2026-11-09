@@ -46,6 +46,8 @@ struct State {
     animate: bool,
     /// Motorns kommentar till sitt senaste drag.
     thinking: String,
+    /// Visat tips: pjäsen som bör flyttas och rutan den bör till.
+    hint: Option<(Square, Square)>,
 }
 
 thread_local! {
@@ -122,6 +124,7 @@ fn render(state: &State, doc: &Document) -> Result<(), JsValue> {
         heat_for: state.show_heat.then_some(state.game.player()),
         last_move: state.game.last_move(),
         animate: state.animate,
+        hint: state.hint,
     };
     by_id(doc, "board")?.set_inner_html(&view::board_html(state.game.board(), flipped, marks));
     by_id(doc, "thinking")?.set_text_content(Some(&state.thinking));
@@ -188,6 +191,7 @@ fn report(state: &mut State, result: Result<Turn, MoveError>) {
                 ));
             }
             state.animate = true;
+            state.hint = None;
             finish_if_over(state);
             schedule_engine(state);
         }
@@ -290,6 +294,7 @@ fn new_game(player: Color) -> Result<(), JsValue> {
         }
         state.game = Game::new(player, state.kb.rating, seed());
         state.selected = None;
+        state.hint = None;
         THINKING_START.clone_into(&mut state.thinking);
         state
             .log
@@ -323,10 +328,24 @@ fn on_resign(_: &Event) -> Result<(), JsValue> {
     })
 }
 
+/// Visar bästa draget för spelaren.
+fn on_hint(_: &Event) -> Result<(), JsValue> {
+    with_state(|state, _| {
+        if let Some(hint) = state.game.hint() {
+            state.hint = Some((hint.from, hint.to));
+            state.log.push(hint.text);
+        } else {
+            state.log.push("Inget tips just nu.".to_owned());
+        }
+        Ok(())
+    })
+}
+
 /// Ångrar spelarens senaste drag och motorns svar.
 fn on_undo(_: &Event) -> Result<(), JsValue> {
     with_state(|state, _| {
         state.selected = None;
+        state.hint = None;
         let message = if state.game.undo() {
             "Draget är ångrat. Din tur."
         } else if state.game.is_over() {
@@ -381,6 +400,7 @@ pub fn start() -> Result<(), JsValue> {
         show_heat: true,
         animate: false,
         thinking: THINKING_START.to_owned(),
+        hint: None,
     };
     render(&state, &doc)?;
     STATE.with_borrow_mut(|slot| *slot = Some(state));
@@ -392,6 +412,7 @@ pub fn start() -> Result<(), JsValue> {
     listen(&doc, "resign", "click", on_resign)?;
     listen(&doc, "describe", "click", on_describe)?;
     listen(&doc, "undo", "click", on_undo)?;
+    listen(&doc, "hint", "click", on_hint)?;
     listen(&doc, "show-heat", "change", on_heat_toggle)?;
     Ok(())
 }

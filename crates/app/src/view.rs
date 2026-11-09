@@ -67,6 +67,8 @@ pub struct Marks {
     pub last_move: Option<(Square, Square)>,
     /// Låt pjäsen i senaste draget glida från sin gamla ruta.
     pub animate: bool,
+    /// Tipset: pjäsen som bör flyttas och rutan den bör till.
+    pub hint: Option<(Square, Square)>,
 }
 
 /// Rutans position på skärmen som (kolumn, rad), räknat från övre vänstra hörnet.
@@ -156,7 +158,7 @@ pub fn board_html(board: &Board, flipped: bool, marks: Marks) -> String {
             {
                 classes.push_str(" last");
             }
-            let label_suffix = marks.heat_for.map_or_else(String::new, |player| {
+            let mut label_suffix = marks.heat_for.map_or_else(String::new, |player| {
                 let (class, label) = heat(
                     attackers(board, square, player),
                     attackers(board, square, !player),
@@ -164,6 +166,16 @@ pub fn board_html(board: &Board, flipped: bool, marks: Marks) -> String {
                 classes.push_str(&class);
                 label
             });
+            if let Some((from, to)) = marks.hint {
+                if square == from {
+                    classes.push_str(" hint-from");
+                    label_suffix.push_str(", tips: flytta den här pjäsen");
+                }
+                if square == to {
+                    classes.push_str(" hint-to");
+                    label_suffix.push_str(", tips: hit");
+                }
+            }
             let motion = marks
                 .last_move
                 .filter(|(_, to)| marks.animate && *to == square)
@@ -399,6 +411,22 @@ mod tests {
             },
         );
         assert!(flipped.contains("style=\"--dx:0;--dy:-2\""));
+    }
+
+    #[test]
+    fn hint_marks_the_piece_and_the_target() {
+        let marks = Marks {
+            hint: Some((Square::G1, Square::F3)),
+            ..Marks::default()
+        };
+        let html = board_html(&Board::default(), false, marks);
+        assert!(html.contains(
+            "class=\"sq dark hint-from\" data-sq=\"g1\" aria-label=\"g1 vit springare, tips: flytta den här pjäsen\""
+        ));
+        assert!(
+            html.contains("class=\"sq light hint-to\" data-sq=\"f3\" aria-label=\"f3, tips: hit\"")
+        );
+        assert_eq!(html.matches("hint-").count(), 2);
     }
 
     #[test]

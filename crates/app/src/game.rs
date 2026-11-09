@@ -6,10 +6,10 @@ use chess_trainer_domain::notation::to_san;
 use chess_trainer_engine::describe::describe;
 use chess_trainer_engine::mistakes::{Mistake, assess};
 use chess_trainer_engine::san::{from_squares, landing_square, parse_san, san};
-use chess_trainer_engine::search::{Rng, choose};
+use chess_trainer_engine::search::{Rng, Strength, choose};
 use chess_trainer_engine::{Board, Color, GameStatus, Move, Square};
 
-use crate::commentary::comment;
+use crate::commentary::{comment, hint_text};
 use crate::knowledge::{GameRecord, MistakeRecord, Score};
 use crate::level::{Level, level_for};
 
@@ -46,6 +46,20 @@ pub struct Turn {
     pub played: String,
     /// Felet, om draget var ett tydligt fel.
     pub mistake: Option<Mistake>,
+}
+
+/// Styrkan bakom tipsen: full sökning utan slump, oavsett spelarens nivå.
+const HINT_STRENGTH: Strength = Strength { depth: 3, noise: 0 };
+
+/// Ett tips till spelaren.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hint {
+    /// Rutan där pjäsen som bör flyttas står.
+    pub from: Square,
+    /// Rutan pjäsen bör flyttas till. Vid rockad är det kungens slutruta.
+    pub to: Square,
+    /// Tipset i ord.
+    pub text: String,
 }
 
 /// Motorns drag, med kommentaren om hur den tänkte.
@@ -209,6 +223,19 @@ impl Game {
         self.board.play_unchecked(mv);
         self.moves.push(text.clone());
         text
+    }
+
+    /// Bästa draget för spelaren, om det är spelarens tur.
+    #[must_use]
+    pub fn hint(&self) -> Option<Hint> {
+        if self.check_turn().is_err() {
+            return None;
+        }
+        choose(&self.board, HINT_STRENGTH, &mut Rng::new(1)).map(|choice| Hint {
+            from: choice.mv.from,
+            to: landing_square(&self.board, choice.mv),
+            text: hint_text(&self.board, choice.mv),
+        })
     }
 
     /// Motorns drag och kommentar, om det är motorns tur.
@@ -486,6 +513,21 @@ mod tests {
         game.play("Dd5").unwrap();
         assert!(game.undo());
         assert_eq!(game.mistakes.len(), 1);
+    }
+
+    #[test]
+    fn hint_suggests_the_best_move_on_the_players_turn() {
+        // Svart torn på d5 hänger: tipset är Dxd5.
+        let mut game = game_from("4k3/8/8/3r4/8/8/8/3QK3 w - - 0 1", Color::White);
+        let hint = game.hint().unwrap();
+        assert_eq!((hint.from, hint.to), (Square::D1, Square::D5));
+        assert_eq!(hint.text, "Tips: Dxd5. Du slår motståndarens torn.");
+        // Inget tips när det är motorns tur eller partiet är slut.
+        game.play("Kf1").unwrap();
+        assert_eq!(game.hint(), None);
+        let mut over = game_from("6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1", Color::White);
+        over.play("Ta8").unwrap();
+        assert_eq!(over.hint(), None);
     }
 
     #[test]

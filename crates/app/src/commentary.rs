@@ -5,7 +5,7 @@ use chess_trainer_domain::notation::to_swedish;
 use chess_trainer_engine::explain::{Idea, ideas};
 use chess_trainer_engine::san::san;
 use chess_trainer_engine::search::{Choice, MATE};
-use chess_trainer_engine::{Board, Piece};
+use chess_trainer_engine::{Board, Move, Piece};
 
 /// Så många andra drag nämns.
 const ALTERNATIVES: usize = 2;
@@ -59,6 +59,44 @@ fn sentence(idea: Idea) -> String {
         Idea::Develops(piece) => format!("Jag utvecklar {} mot mitten.", mine(piece)),
         Idea::TakesCenter => "Bonden tar plats i centrum.".to_owned(),
     }
+}
+
+/// En mening för en idé, riktad till spelaren som tips.
+fn advice_sentence(idea: Idea) -> String {
+    match idea {
+        Idea::Mate => "Det är schack matt!".to_owned(),
+        Idea::Check => "Det ger schack.".to_owned(),
+        Idea::Castles => "Rockera för att få kungen i säkerhet.".to_owned(),
+        Idea::Captures(piece) => format!("Du slår motståndarens {}.", name(piece)),
+        Idea::Escapes(piece) => {
+            let threatened = if piece == Piece::Rook {
+                "hotat"
+            } else {
+                "hotad"
+            };
+            format!(
+                "{} är {threatened}, flytta undan den.",
+                capitalise(&yours(piece))
+            )
+        }
+        Idea::Threatens(piece, square) => {
+            format!("Då hotar du motståndarens {} på {square}.", name(piece))
+        }
+        Idea::Develops(piece) => format!("Utveckla {} mot mitten.", yours(piece)),
+        Idea::TakesCenter => "Ta plats i centrum med bonden.".to_owned(),
+    }
+}
+
+/// Tipset till spelaren: draget och varför det är bra. `board` är ställningen före draget.
+#[must_use]
+pub fn hint_text(board: &Board, mv: Move) -> String {
+    let mut parts = vec![format!("Tips: {}.", to_swedish(&san(board, mv)))];
+    let found = ideas(board, mv);
+    if found.is_empty() {
+        parts.push("Ett lugnt drag som förbättrar din ställning.".to_owned());
+    }
+    parts.extend(found.into_iter().map(advice_sentence));
+    parts.join(" ")
 }
 
 /// Första bokstaven versal.
@@ -128,7 +166,10 @@ pub fn comment(board: &Board, choice: &Choice) -> String {
     reason = "testnamnen är dokumentationen och fen återanvänds per testfall"
 )]
 mod tests {
-    use super::{Board, Choice, Idea, MATE, Piece, assessment, capitalise, comment, sentence};
+    use super::{
+        Board, Choice, Idea, MATE, Piece, advice_sentence, assessment, capitalise, comment,
+        hint_text, sentence,
+    };
     use chess_trainer_engine::Square;
 
     fn setup(fen: &str, chosen: &str, scored: &[(&str, i32)]) -> (Board, Choice) {
@@ -167,6 +208,50 @@ mod tests {
         );
         assert_eq!(sentence(Idea::TakesCenter), "Bonden tar plats i centrum.");
         assert_eq!(sentence(Idea::Captures(Piece::King)), "Jag slår din kung.");
+    }
+
+    #[test]
+    fn advice_for_every_idea() {
+        assert_eq!(advice_sentence(Idea::Mate), "Det är schack matt!");
+        assert_eq!(advice_sentence(Idea::Check), "Det ger schack.");
+        assert!(advice_sentence(Idea::Castles).starts_with("Rockera"));
+        assert_eq!(
+            advice_sentence(Idea::Captures(Piece::Rook)),
+            "Du slår motståndarens torn."
+        );
+        assert_eq!(
+            advice_sentence(Idea::Escapes(Piece::Knight)),
+            "Din springare är hotad, flytta undan den."
+        );
+        assert_eq!(
+            advice_sentence(Idea::Escapes(Piece::Rook)),
+            "Ditt torn är hotat, flytta undan den."
+        );
+        assert_eq!(
+            advice_sentence(Idea::Threatens(Piece::Queen, Square::D8)),
+            "Då hotar du motståndarens dam på d8."
+        );
+        assert_eq!(
+            advice_sentence(Idea::Develops(Piece::Knight)),
+            "Utveckla din springare mot mitten."
+        );
+        assert_eq!(
+            advice_sentence(Idea::TakesCenter),
+            "Ta plats i centrum med bonden."
+        );
+    }
+
+    #[test]
+    fn hint_text_names_the_move_and_why() {
+        let board = Board::default();
+        assert_eq!(
+            hint_text(&board, "g1f3".parse().unwrap()),
+            "Tips: Sf3. Utveckla din springare mot mitten."
+        );
+        assert_eq!(
+            hint_text(&board, "a2a3".parse().unwrap()),
+            "Tips: a3. Ett lugnt drag som förbättrar din ställning."
+        );
     }
 
     #[test]

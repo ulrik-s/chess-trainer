@@ -3,7 +3,7 @@
 //! Styrkan sätts med sökdjup och "brus": motorn väljer slumpvis bland alla drag
 //! som är högst `noise` centibönder sämre än det bästa.
 
-use cozy_chess::{Board, Color, Move, Piece, Square};
+use cozy_chess::{Board, Color, Move, Piece, Rank, Square};
 
 use crate::san::{is_capture, legal_moves};
 
@@ -31,7 +31,12 @@ const CENTER_BONUS: i32 = 10;
 /// De fyra centrumrutorna.
 const CENTER: [Square; 4] = [Square::D4, Square::E4, Square::D5, Square::E5];
 
-/// Ställningens värde för en färg: material plus centrumbonus.
+/// Avdrag per springare eller löpare som står kvar på första raden. Får motorn, och tipsen,
+/// att utveckla pjäser i stället för att flytta bönder planlöst.
+// ponytail: ett enda positionellt mått; piece-square-tabeller om spelet behöver bli starkare.
+const UNDEVELOPED_PENALTY: i32 = 15;
+
+/// Ställningens värde för en färg: material, centrum och utveckling.
 fn side_score(board: &Board, color: Color) -> i32 {
     let ours = board.colors(color);
     let material = Piece::ALL.iter().fold(0_i32, |sum, &piece| {
@@ -39,7 +44,13 @@ fn side_score(board: &Board, color: Color) -> i32 {
         sum.saturating_add(value(piece).saturating_mul(count))
     });
     let center = CENTER.iter().filter(|sq| ours.has(**sq)).count();
-    material.saturating_add(CENTER_BONUS.saturating_mul(i32::try_from(center).unwrap_or(0)))
+    let back_rank = Rank::First.relative_to(color).bitboard() & ours;
+    let undeveloped = (board.pieces(Piece::Knight) & back_rank)
+        .len()
+        .saturating_add((board.pieces(Piece::Bishop) & back_rank).len());
+    material
+        .saturating_add(CENTER_BONUS.saturating_mul(i32::try_from(center).unwrap_or(0)))
+        .saturating_sub(UNDEVELOPED_PENALTY.saturating_mul(i32::try_from(undeveloped).unwrap_or(0)))
 }
 
 /// Statisk värdering ur den dragande sidans perspektiv.
@@ -60,13 +71,20 @@ fn ordered_moves(board: &Board) -> Vec<Move> {
     moves
 }
 
+/// Högst så många slag i följd söks i slagsökningen.
+const QUIESCENCE_DEPTH: u8 = 8;
+
 /// Slagsökning: fortsätter bara med slag tills ställningen är lugn.
 /// Utan den tror motorn att den vinner en pjäs som slås tillbaka nästa drag.
-fn quiescence(board: &Board, mut alpha: i32, beta: i32) -> i32 {
+/// `depth_left` begränsar hur många slag i följd som söks, så att sökningen alltid tar slut.
+fn quiescence(board: &Board, mut alpha: i32, beta: i32, depth_left: u8) -> i32 {
     let stand_pat = evaluate(board);
     if stand_pat >= beta {
         return stand_pat;
     }
+    let Some(next_depth) = depth_left.checked_sub(1) else {
+        return stand_pat;
+    };
     alpha = alpha.max(stand_pat);
     for mv in ordered_moves(board)
         .into_iter()
@@ -74,8 +92,13 @@ fn quiescence(board: &Board, mut alpha: i32, beta: i32) -> i32 {
     {
         let mut child = board.clone();
         child.play_unchecked(mv);
-        let score =
-            quiescence(&child, beta.saturating_neg(), alpha.saturating_neg()).saturating_neg();
+        let score = quiescence(
+            &child,
+            beta.saturating_neg(),
+            alpha.saturating_neg(),
+            next_depth,
+        )
+        .saturating_neg();
         if score >= beta {
             return score;
         }
@@ -95,7 +118,7 @@ fn negamax(board: &Board, depth: u8, mut alpha: i32, beta: i32) -> i32 {
         };
     }
     if depth == 0 {
-        return quiescence(board, alpha, beta);
+        return quiescence(board, alpha, beta, QUIESCENCE_DEPTH);
     }
     let mut best = INF.saturating_neg();
     for mv in moves {
@@ -251,19 +274,55 @@ mod tests {
     }
 
     #[test]
+    fn undeveloped_minor_pieces_cost_points() {
+        // Vit springare kvar på g1, svart springare utvecklad till f6.
+        let fen = "4k3/8/5n2/8/8/8/8/4K1N1 w - - 0 1";
+        assert_eq!(evaluate(&board(fen)), -15);
+        // Vit löpare på c1 och svart löpare på c8 tar ut varandra.
+        let fen = "2b1k3/8/8/8/8/8/8/2B1K3 w - - 0 1";
+        assert_eq!(evaluate(&board(fen)), 0);
+        // En vit löpare på åttonde raden räknas inte som outvecklad.
+        let fen = "B3k3/8/8/8/8/8/8/4K3 w - - 0 1";
+        assert_eq!(evaluate(&board(fen)), 300);
+    }
+
+    #[test]
+    fn engine_prefers_developing_to_pawn_moves() {
+        let mv = choose(
+            &Board::default(),
+            Strength { depth: 2, noise: 0 },
+            &mut Rng::new(1),
+        )
+        .unwrap()
+        .mv;
+        // En springare ut ger mer än ett bondedrag, eftersom den inte längre står outvecklad.
+        assert_eq!(Board::default().piece_on(mv.from), Some(Piece::Knight));
+    }
+
+    #[test]
     fn quiescence_sees_recapture() {
         // Vit dam kan slå en bonde på d5 som är skyddad av en bonde på e6: lugnt läge är bättre.
         let fen = "4k3/8/4p3/3p4/8/8/8/3QK3 w - - 0 1";
         let b = board(fen);
         let quiet = evaluate(&b);
-        assert_eq!(quiescence(&b, -MATE, MATE), quiet);
+        assert_eq!(quiescence(&b, -MATE, MATE, 8), quiet);
     }
 
     #[test]
     fn quiescence_takes_free_material() {
         // Svart torn på d5 är oskyddat.
         let fen = "4k3/8/8/3r4/8/8/8/3QK3 w - - 0 1";
-        assert_eq!(quiescence(&board(fen), -MATE, MATE), 910);
+        assert_eq!(quiescence(&board(fen), -MATE, MATE, 8), 910);
+    }
+
+    #[test]
+    fn quiescence_stops_at_its_depth_limit() {
+        // Utan djup kvar räknas bara stå-still-värdet, trots att tornet hänger.
+        let fen = "4k3/8/8/3r4/8/8/8/3QK3 w - - 0 1";
+        assert_eq!(quiescence(&board(fen), -MATE, MATE, 0), 390);
+        // Ett slag räcker för att ta tornet.
+        assert_eq!(quiescence(&board(fen), -MATE, MATE, 1), 910);
+        assert_eq!(super::QUIESCENCE_DEPTH, 8);
     }
 
     #[test]
@@ -271,16 +330,16 @@ mod tests {
         let fen = "4k3/8/8/3r4/8/8/8/3QK3 w - - 0 1";
         let b = board(fen);
         // Stå-still-värdet (390, tornet står i centrum) är redan över beta.
-        assert_eq!(quiescence(&b, -MATE, 100), 390);
+        assert_eq!(quiescence(&b, -MATE, 100, 8), 390);
         // Slaget går över beta men inte stå-still-värdet. Vid avskärning blir svaret en gräns (beta), inte exakt värde.
-        assert_eq!(quiescence(&b, -MATE, 500), 500);
+        assert_eq!(quiescence(&b, -MATE, 500, 8), 500);
     }
 
     #[test]
     fn quiescence_keeps_looking_after_a_bad_capture() {
         // Dxd5 (tornet först i ordningen) förlorar damen; Dxa4 vinner en springare gratis.
         let fen = "4k3/8/4p3/3r4/n7/8/8/3QK3 w - - 0 1";
-        assert_eq!(quiescence(&board(fen), -MATE, MATE), 290);
+        assert_eq!(quiescence(&board(fen), -MATE, MATE, 8), 290);
     }
 
     #[test]
