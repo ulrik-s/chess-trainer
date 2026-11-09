@@ -57,6 +57,9 @@ pub struct EngineMove {
     pub comment: String,
 }
 
+/// Ett drags från- och till-ruta.
+type FromTo = (Square, Square);
+
 /// Ett pågående eller avslutat parti.
 #[derive(Debug, Clone)]
 pub struct Game {
@@ -78,6 +81,8 @@ pub struct Game {
     recorded: bool,
     /// Senaste dragets från- och till-ruta, så som en människa ser dem.
     last_move: Option<(Square, Square)>,
+    /// Ställningen och senaste draget före varje drag, så att drag kan ångras.
+    history: Vec<(Board, Option<FromTo>)>,
 }
 
 impl Game {
@@ -94,6 +99,7 @@ impl Game {
             resigned: false,
             recorded: false,
             last_move: None,
+            history: Vec::new(),
         }
     }
 
@@ -198,6 +204,7 @@ impl Game {
     /// Spelar ett drag på brädet och returnerar det i SAN.
     fn push(&mut self, mv: Move) -> String {
         let text = san(&self.board, mv);
+        self.history.push((self.board.clone(), self.last_move));
         self.last_move = Some((mv.from, landing_square(&self.board, mv)));
         self.board.play_unchecked(mv);
         self.moves.push(text.clone());
@@ -214,6 +221,36 @@ impl Game {
             let san = self.push(choice.mv);
             EngineMove { san, comment }
         })
+    }
+
+    /// Ångrar spelarens senaste drag och motorns svar på det, så att det blir spelarens tur igen.
+    /// Har motorn inte svarat än ångras bara spelarens drag. Falskt om det inte finns något att
+    /// ångra eller partiet är slut.
+    ///
+    /// Fel i ångrade drag finns kvar, eftersom spelaren faktiskt gjorde dem.
+    pub fn undo(&mut self) -> bool {
+        let plies = if self.board.side_to_move() == self.player {
+            2
+        } else {
+            1
+        };
+        if self.is_over() {
+            return false;
+        }
+        // Historiken och draglistan är alltid lika långa: ett inlägg per spelat drag.
+        let target = self
+            .history
+            .len()
+            .checked_sub(plies)
+            .and_then(|keep| self.history.get(keep).cloned().map(|entry| (keep, entry)));
+        let Some((keep, (board, last_move))) = target else {
+            return false;
+        };
+        self.history.truncate(keep);
+        self.moves.truncate(keep);
+        self.board = board;
+        self.last_move = last_move;
+        true
     }
 
     /// Spelaren ger upp.
@@ -385,6 +422,70 @@ mod tests {
         let mut game = game_from("r3k2r/8/8/8/8/8/8/R3K2R w KQkq - 0 1", Color::White);
         game.play("0-0").unwrap();
         assert_eq!(game.last_move(), Some((Square::E1, Square::G1)));
+    }
+
+    #[test]
+    fn undo_takes_back_the_reply_and_the_players_move() {
+        let mut game = Game::new(Color::White, 1000.0, 1);
+        assert!(!game.undo());
+        game.play("e4").unwrap();
+        game.engine_move().unwrap();
+        let after_first_reply = (game.board().clone(), game.last_move());
+        game.play("d4").unwrap();
+        game.engine_move().unwrap();
+        assert!(game.undo());
+        assert_eq!(game.moves().len(), 2);
+        assert_eq!(game.moves()[0], "e4");
+        assert_eq!((game.board().clone(), game.last_move()), after_first_reply);
+        assert_eq!(game.board().side_to_move(), Color::White);
+        assert!(game.undo());
+        assert!(game.moves().is_empty());
+        assert_eq!(game.last_move(), None);
+        assert_eq!(*game.board(), chess_trainer_engine::Board::default());
+        assert!(!game.undo());
+    }
+
+    #[test]
+    fn undo_before_the_engine_replies_takes_back_one_move() {
+        let mut game = Game::new(Color::White, 1000.0, 1);
+        game.play("e4").unwrap();
+        assert!(game.undo());
+        assert!(game.moves().is_empty());
+        assert!(!game.engine_to_move());
+        assert_eq!(game.engine_move(), None);
+    }
+
+    #[test]
+    fn black_cannot_undo_the_engines_opening_move() {
+        let mut game = Game::new(Color::Black, 1000.0, 1);
+        game.engine_move().unwrap();
+        assert!(!game.undo());
+        assert_eq!(game.moves().len(), 1);
+        game.play_squares(Square::E7, Square::E5).unwrap();
+        game.engine_move().unwrap();
+        assert!(game.undo());
+        assert_eq!(game.moves().len(), 1);
+        assert_eq!(game.board().side_to_move(), Color::Black);
+    }
+
+    #[test]
+    fn finished_games_cannot_be_undone() {
+        let mut game = game_from("6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1", Color::White);
+        game.play("Ta8").unwrap();
+        assert!(!game.undo());
+        let mut resigned = Game::new(Color::White, 1000.0, 1);
+        resigned.play("e4").unwrap();
+        resigned.engine_move().unwrap();
+        resigned.resign();
+        assert!(!resigned.undo());
+    }
+
+    #[test]
+    fn mistakes_stay_after_undo() {
+        let mut game = game_from("4k3/8/4p3/8/8/8/8/3QK3 w - - 0 1", Color::White);
+        game.play("Dd5").unwrap();
+        assert!(game.undo());
+        assert_eq!(game.mistakes.len(), 1);
     }
 
     #[test]

@@ -323,6 +323,22 @@ fn on_resign(_: &Event) -> Result<(), JsValue> {
     })
 }
 
+/// Ångrar spelarens senaste drag och motorns svar.
+fn on_undo(_: &Event) -> Result<(), JsValue> {
+    with_state(|state, _| {
+        state.selected = None;
+        let message = if state.game.undo() {
+            "Draget är ångrat. Din tur."
+        } else if state.game.is_over() {
+            "Partiet är slut och sparat, så det går inte att ångra."
+        } else {
+            "Det finns inget drag att ångra."
+        };
+        state.log.push(message.to_owned());
+        Ok(())
+    })
+}
+
 /// Ställningen i ord, för blindspel.
 fn on_describe(_: &Event) -> Result<(), JsValue> {
     with_state(|state, _| {
@@ -375,6 +391,7 @@ pub fn start() -> Result<(), JsValue> {
     listen(&doc, "new-black", "click", |_| new_game(Color::Black))?;
     listen(&doc, "resign", "click", on_resign)?;
     listen(&doc, "describe", "click", on_describe)?;
+    listen(&doc, "undo", "click", on_undo)?;
     listen(&doc, "show-heat", "change", on_heat_toggle)?;
     Ok(())
 }
