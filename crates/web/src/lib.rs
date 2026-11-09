@@ -40,14 +40,23 @@ struct State {
     log: Vec<String>,
     /// Får vi skriva till `localStorage`? Falskt om en trasig kunskapsbas inte kunde säkerhetskopieras.
     can_save: bool,
-    /// Färgas rutorna efter hur attackerade de är?
-    show_heat: bool,
-    /// Ska senaste draget animeras vid nästa ritning? Nollställs efter varje ritning.
-    animate: bool,
+    /// Hur brädet visas.
+    display: Display,
     /// Motorns kommentar till sitt senaste drag.
     thinking: String,
     /// Visat tips: pjäsen som bör flyttas och rutan den bör till.
     hint: Option<(Square, Square)>,
+}
+
+/// Hur brädet visas.
+#[derive(Default)]
+struct Display {
+    /// Färgas rutorna efter hur attackerade de är?
+    show_heat: bool,
+    /// Ska senaste draget animeras vid nästa ritning? Nollställs efter varje ritning.
+    animate: bool,
+    /// Har spelaren stängt resultatrutan för att studera slutställningen?
+    result_closed: bool,
 }
 
 thread_local! {
@@ -116,18 +125,40 @@ fn now() -> String {
     String::from(js_sys::Date::new_0().to_iso_string())
 }
 
+/// Döljer eller visar ett element.
+fn toggle_hidden(element: &Element, hidden: bool) -> Result<(), JsValue> {
+    if hidden {
+        element.set_attribute("hidden", "")
+    } else {
+        element.remove_attribute("hidden")
+    }
+}
+
 /// Ritar om allt från tillståndet.
 fn render(state: &State, doc: &Document) -> Result<(), JsValue> {
     let flipped = state.game.player() == Color::Black;
     let marks = Marks {
         selected: state.selected,
-        heat_for: state.show_heat.then_some(state.game.player()),
+        heat_for: state.display.show_heat.then_some(state.game.player()),
         last_move: state.game.last_move(),
-        animate: state.animate,
+        animate: state.display.animate,
         hint: state.hint,
     };
     by_id(doc, "board")?.set_inner_html(&view::board_html(state.game.board(), flipped, marks));
     by_id(doc, "thinking")?.set_text_content(Some(&state.thinking));
+    let warning = by_id(doc, "warning")?;
+    let warnings = view::warnings(&state.game);
+    warning.set_text_content(Some(&warnings.join(" ")));
+    toggle_hidden(&warning, warnings.is_empty())?;
+    let result = by_id(doc, "result")?;
+    match view::banner(&state.game).filter(|_| !state.display.result_closed) {
+        Some(banner) => {
+            by_id(doc, "result-title")?.set_text_content(Some(banner.title));
+            by_id(doc, "result-text")?.set_text_content(Some(banner.text));
+            toggle_hidden(&result, false)?;
+        }
+        None => toggle_hidden(&result, true)?,
+    }
     by_id(doc, "status")?.set_text_content(Some(&view::status_text(&state.game)));
     by_id(doc, "moves")?.set_text_content(Some(&view::move_list(state.game.moves())));
     let start = state.log.len().saturating_sub(LOG_LINES);
@@ -155,7 +186,7 @@ fn with_state(
         let state = slot.as_mut().ok_or_else(|| js_error("inte startad"))?;
         action(state, &doc)?;
         let rendered = render(state, &doc);
-        state.animate = false;
+        state.display.animate = false;
         rendered
     })
 }
@@ -190,7 +221,7 @@ fn report(state: &mut State, result: Result<Turn, MoveError>) {
                     advice(mistake.kind),
                 ));
             }
-            state.animate = true;
+            state.display.animate = true;
             state.hint = None;
             finish_if_over(state);
             schedule_engine(state);
@@ -236,7 +267,7 @@ fn engine_turn(state: &mut State) {
             .log
             .push(format!("Motorn: {}", to_swedish(&reply.san)));
         state.thinking = reply.comment;
-        state.animate = true;
+        state.display.animate = true;
         finish_if_over(state);
     }
 }
@@ -295,6 +326,7 @@ fn new_game(player: Color) -> Result<(), JsValue> {
         state.game = Game::new(player, state.kb.rating, seed());
         state.selected = None;
         state.hint = None;
+        state.display.result_closed = false;
         THINKING_START.clone_into(&mut state.thinking);
         state
             .log
@@ -311,7 +343,7 @@ fn on_heat_toggle(event: &Event) -> Result<(), JsValue> {
         .and_then(|target| target.dyn_into::<HtmlInputElement>().ok())
         .is_some_and(|input| input.checked());
     with_state(|state, _| {
-        state.show_heat = checked;
+        state.display.show_heat = checked;
         Ok(())
     })
 }
@@ -326,6 +358,23 @@ fn on_resign(_: &Event) -> Result<(), JsValue> {
         finish_if_over(state);
         Ok(())
     })
+}
+
+/// Stänger resultatrutan så att slutställningen syns.
+fn on_result_close(_: &Event) -> Result<(), JsValue> {
+    with_state(|state, _| {
+        state.display.result_closed = true;
+        Ok(())
+    })
+}
+
+/// Nytt parti från resultatrutan, med samma färg som förra partiet.
+fn on_result_new(_: &Event) -> Result<(), JsValue> {
+    let player = STATE.with_borrow(|slot| {
+        slot.as_ref()
+            .map_or(Color::White, |state| state.game.player())
+    });
+    new_game(player)
 }
 
 /// Visar bästa draget för spelaren.
@@ -397,8 +446,10 @@ pub fn start() -> Result<(), JsValue> {
         selected: None,
         log,
         can_save,
-        show_heat: true,
-        animate: false,
+        display: Display {
+            show_heat: true,
+            ..Display::default()
+        },
         thinking: THINKING_START.to_owned(),
         hint: None,
     };
@@ -413,6 +464,8 @@ pub fn start() -> Result<(), JsValue> {
     listen(&doc, "describe", "click", on_describe)?;
     listen(&doc, "undo", "click", on_undo)?;
     listen(&doc, "hint", "click", on_hint)?;
+    listen(&doc, "result-close", "click", on_result_close)?;
+    listen(&doc, "result-new", "click", on_result_new)?;
     listen(&doc, "show-heat", "change", on_heat_toggle)?;
     Ok(())
 }
