@@ -47,6 +47,39 @@
         display: grid;
         gap: 16px;
       }
+      .play,
+      .controls,
+      .side {
+        display: grid;
+        gap: 16px;
+        align-content: start;
+        min-width: 0;
+      }
+      /* På bred skärm: brädet till vänster, texterna bredvid, allt synligt utan att scrolla. */
+      @media (min-width: 900px) {
+        main {
+          max-width: 1200px;
+          height: calc(100vh - 32px);
+          grid-template-columns: minmax(360px, min(620px, calc(100vh - 190px))) minmax(320px, 1fr);
+          grid-template-rows: auto minmax(0, 1fr);
+          align-items: start;
+        }
+        .play {
+          grid-column: 1;
+          grid-row: 1 / span 2;
+        }
+        .controls {
+          grid-column: 2;
+          grid-row: 1;
+        }
+        /* Högerkolumnen scrollar själv om texterna blir långa; sidan scrollar aldrig. */
+        .side {
+          grid-column: 2;
+          grid-row: 2;
+          max-height: 100%;
+          overflow-y: auto;
+        }
+      }
       h1 {
         font-size: 1.4rem;
         margin: 0;
@@ -160,6 +193,23 @@
         display: grid;
         place-items: center;
       }
+      /* Tips: pjäsen som bör flyttas blir blå, och målrutan får en blå ring. */
+      .hint-from .pc.w,
+      .hint-from .pc.b {
+        color: #1f6feb;
+        text-shadow: 0 0 2px #fff, 0 0 1px #fff;
+      }
+      .hint-to {
+        position: relative;
+      }
+      .hint-to::after {
+        content: "";
+        position: absolute;
+        inset: 8%;
+        border: 4px solid rgba(31, 111, 235, 0.9);
+        border-radius: 50%;
+        pointer-events: none;
+      }
       .last {
         outline: 3px solid rgba(255, 196, 0, 0.9);
         outline-offset: -3px;
@@ -252,6 +302,7 @@
   </head>
   <body>
     <main>
+      <div class="play">
       <h1>Schacktränaren</h1>
       <p id="status" aria-live="polite">Laddar…</p>
       <div id="board" role="grid" aria-label="Schackbräde"></div>
@@ -263,6 +314,8 @@
           <span class="item"><span class="swatch heat-safe-2"></span>Du har övertaget</span>
         </p>
       </div>
+      </div>
+      <div class="controls">
       <form id="move-form">
         <input
           id="move-input"
@@ -275,12 +328,15 @@
         <button class="action primary" type="submit">Spela</button>
       </form>
       <div class="buttons">
+        <button class="action" id="hint" type="button">Tips</button>
         <button class="action" id="undo" type="button">Ångra drag</button>
         <button class="action" id="new-white" type="button">Nytt parti som vit</button>
         <button class="action" id="new-black" type="button">Nytt parti som svart</button>
         <button class="action" id="describe" type="button">Beskriv ställningen</button>
         <button class="action" id="resign" type="button">Ge upp</button>
       </div>
+      </div>
+      <aside class="side">
       <section>
         <h2>Motorn tänker</h2>
         <p id="thinking" aria-live="polite"></p>
@@ -301,6 +357,7 @@
         <h2>Lärdomar</h2>
         <ul id="lessons"></ul>
       </section>
+      </aside>
     </main>
   </body>
 </html>
