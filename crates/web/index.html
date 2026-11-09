@@ -210,6 +210,92 @@
         border-radius: 50%;
         pointer-events: none;
       }
+      /* Schack: kungen lyser rött. Matt: starkare rött som pulserar, och de pjäser som ger matt ramas in. */
+      .in-check,
+      .mated {
+        box-shadow: none;
+        background-image: radial-gradient(circle, rgba(230, 0, 0, 0.95) 0%, rgba(230, 0, 0, 0.55) 45%, transparent 75%);
+      }
+      .mated {
+        background-color: #8b0000;
+        animation: pulse 1.2s ease-in-out infinite alternate;
+      }
+      /* Går före ramen för senaste draget, som ofta är samma ruta. */
+      .sq.mating {
+        outline: 4px solid #e00000;
+        outline-offset: -4px;
+      }
+      @keyframes pulse {
+        to {
+          filter: brightness(1.35);
+        }
+      }
+      .board-wrap {
+        position: relative;
+      }
+      .result {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-content: center;
+        gap: 10px;
+        padding: 16px;
+        text-align: center;
+        border-radius: 6px;
+        background: rgba(0, 0, 0, 0.62);
+        color: #fff;
+        /* Vänta tills sista draget har glidit klart. */
+        animation: fade-in 400ms ease 500ms both;
+      }
+      .result[hidden] {
+        display: none;
+      }
+      .result-title {
+        margin: 0;
+        font-size: clamp(2rem, 8vw, 3.4rem);
+        font-weight: 800;
+        line-height: 1.1;
+        text-shadow: 0 2px 8px #000;
+      }
+      .result-text {
+        margin: 0;
+        font-size: 1.05rem;
+      }
+      .result-buttons {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 8px;
+        margin-top: 6px;
+      }
+      @keyframes fade-in {
+        from {
+          opacity: 0;
+          transform: scale(0.96);
+        }
+      }
+      .warning {
+        margin: 0;
+        padding: 8px 12px;
+        border-radius: 6px;
+        background: #fff1d6;
+        color: #6b3a00;
+        border-left: 4px solid #e08a00;
+        font-weight: 600;
+      }
+      .warning[hidden] {
+        display: none;
+      }
+      summary {
+        cursor: pointer;
+        list-style-position: inside;
+      }
+      summary h2 {
+        display: inline;
+      }
+      .help p {
+        margin: 8px 0 0;
+      }
       .last {
         outline: 3px solid rgba(255, 196, 0, 0.9);
         outline-offset: -3px;
@@ -225,7 +311,9 @@
         }
       }
       @media (prefers-reduced-motion: reduce) {
-        .slide {
+        .slide,
+        .mated,
+        .result {
           animation: none;
         }
       }
@@ -305,7 +393,18 @@
       <div class="play">
       <h1>Schacktränaren</h1>
       <p id="status" aria-live="polite">Laddar…</p>
-      <div id="board" role="grid" aria-label="Schackbräde"></div>
+      <p id="warning" class="warning" aria-live="polite" hidden></p>
+      <div class="board-wrap">
+        <div id="board" role="grid" aria-label="Schackbräde"></div>
+        <div id="result" class="result" role="dialog" aria-labelledby="result-title" hidden>
+          <p id="result-title" class="result-title"></p>
+          <p id="result-text" class="result-text"></p>
+          <div class="result-buttons">
+            <button class="action primary" id="result-new" type="button">Nytt parti</button>
+            <button class="action" id="result-close" type="button">Visa ställningen</button>
+          </div>
+        </div>
+      </div>
       <div class="heat-bar">
         <label class="toggle"><input type="checkbox" id="show-heat" checked /> Visa attacker</label>
         <p class="legend">
@@ -356,6 +455,20 @@
       <section>
         <h2>Lärdomar</h2>
         <ul id="lessons"></ul>
+      </section>
+      <section>
+        <details>
+          <summary><h2>Hjälp</h2></summary>
+          <div class="help">
+            <p><strong>Så spelar du.</strong> Klicka på en pjäs och sedan på rutan den ska till. Du kan också skriva draget, till exempel <em>e4</em>, <em>Sf3</em> eller <em>springare f3</em>. Rockad skrivs <em>0-0</em> eller <em>0-0-0</em>.</p>
+            <p><strong>Dragkontroll före varje drag.</strong> Fråga dig två saker. Vad hotar motståndarens senaste drag? Kan pjäsen jag flyttar slås gratis på sin nya ruta? Rutan <em>Se upp</em> ovanför brädet hjälper dig med det.</p>
+            <p><strong>Färgerna.</strong> Röd ruta: motståndaren attackerar den fler gånger än du skyddar den, så ställ inget där. Grön: du har övertaget. Gul: lika. Gul ram: senaste draget. Röd kung: schack.</p>
+            <p><strong>Tips</strong> visar bästa draget. Pjäsen blir blå och målrutan får en blå ring. Använd det när du kör fast, inte på varje drag.</p>
+            <p><strong>Ångra drag</strong> tar tillbaka ditt drag och motorns svar. Prova ett bättre drag och se skillnaden.</p>
+            <p><strong>Motorn tänker</strong> förklarar varje motordrag. Säger den att den valde ett sämre drag, leta efter hur du kan straffa det.</p>
+            <p><strong>Lärdomar</strong> samlar dina vanligaste fel från de senaste tio partierna. Rating och lärdomar sparas i den här webbläsaren.</p>
+          </div>
+        </details>
       </section>
       </aside>
     </main>

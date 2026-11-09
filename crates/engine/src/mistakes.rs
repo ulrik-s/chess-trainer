@@ -9,8 +9,8 @@ use serde::{Deserialize, Serialize};
 use crate::san::{is_capture, san};
 use crate::search::score_moves;
 
-/// Sökdjup för bedömningen. Två halvdrag plus slagsökning räcker för enkla fel.
-const DEPTH: u8 = 2;
+/// Sökdjup för bedömningen. Tipsen använder samma djup, så att ett tips aldrig räknas som ett fel.
+pub const DEPTH: u8 = 3;
 
 /// Så många centibönder sämre än bästa draget räknas som ett fel. Ungefär en och en halv bonde.
 // ponytail: fast tröskel; skala med spelarens rating om feedbacken blir för tjatig eller för snäll.

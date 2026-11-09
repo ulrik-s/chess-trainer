@@ -4,7 +4,7 @@ use std::fmt;
 
 use chess_trainer_domain::notation::to_san;
 use chess_trainer_engine::describe::describe;
-use chess_trainer_engine::mistakes::{Mistake, assess};
+use chess_trainer_engine::mistakes::{self, Mistake, assess};
 use chess_trainer_engine::san::{from_squares, landing_square, parse_san, san};
 use chess_trainer_engine::search::{Rng, Strength, choose};
 use chess_trainer_engine::{Board, Color, GameStatus, Move, Square};
@@ -48,8 +48,11 @@ pub struct Turn {
     pub mistake: Option<Mistake>,
 }
 
-/// Styrkan bakom tipsen: full sökning utan slump, oavsett spelarens nivå.
-const HINT_STRENGTH: Strength = Strength { depth: 3, noise: 0 };
+/// Styrkan bakom tipsen: samma djup som felbedömningen och utan slump, oavsett spelarens nivå.
+const HINT_STRENGTH: Strength = Strength {
+    depth: mistakes::DEPTH,
+    noise: 0,
+};
 
 /// Ett tips till spelaren.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -160,6 +163,12 @@ impl Game {
     #[must_use]
     pub fn engine_to_move(&self) -> bool {
         !self.is_over() && self.board.side_to_move() != self.player
+    }
+
+    /// Har spelaren gett upp?
+    #[must_use]
+    pub const fn resigned(&self) -> bool {
+        self.resigned
     }
 
     /// Är partiet slut?
@@ -528,6 +537,21 @@ mod tests {
         let mut over = game_from("6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1", Color::White);
         over.play("Ta8").unwrap();
         assert_eq!(over.hint(), None);
+    }
+
+    #[test]
+    fn following_a_hint_is_never_a_mistake() {
+        // Springaroffret Sg6 leder till matt men ser ut att tappa en pjäs vid grund sökning.
+        let sacrifice = "r1b1kn1r/p1p1q1pp/1p1p1p2/3N1B2/4P3/3Q4/PPPP1PPP/R1B1K2R w KQ - 0 1";
+        for (fen, player) in [
+            (sacrifice, Color::White),
+            ("4k3/8/8/3r4/8/8/8/3QK3 w - - 0 1", Color::White),
+        ] {
+            let mut game = game_from(fen, player);
+            let hint = game.hint().unwrap();
+            let turn = game.play_squares(hint.from, hint.to).unwrap();
+            assert_eq!(turn.mistake, None);
+        }
     }
 
     #[test]

@@ -38,6 +38,9 @@ En webbapp i Rust, kompilerad till wasm. Allt körs i webbläsaren och kunskapsb
 - Reglerna kommer från schackbiblioteket `cozy-chess` (MIT), aldrig från Claude. `shakmaty` valdes bort eftersom det är GPL.
 - En egen motor i Rust spelar på din nivå. Den söker 1–3 halvdrag och väljer slumpvis bland drag som är nästan lika bra.
 - "Beskriv ställningen" läser upp pjäserna i ord, för blindspel.
+- "Se upp" ovanför brädet varnar när det är din tur: om du står i schack och vilka av dina pjäser som kan slås.
+- Schack syns som en röd kung. Vid matt pulserar kungen, pjäsen som ger matt ramas in i rött och en stor ruta visar resultatet. Rutan kan stängas för att studera slutställningen.
+- Panelen "Hjälp" förklarar hur appen används och hur dragkontrollen går till.
 - "Tips" visar bästa draget: pjäsen blir blå, målrutan får en blå ring och loggen förklarar varför.
 - "Ångra drag" tar tillbaka ditt senaste drag och motorns svar. Ett avslutat parti går inte att ångra, och fel i ångrade drag räknas ändå i lärdomarna.
 - Dragen animeras. Motorn väntar en stund innan den svarar och visar sitt drag med en glidning, och senaste draget markeras.

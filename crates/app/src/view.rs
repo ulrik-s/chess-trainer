@@ -7,10 +7,12 @@ use std::cmp::Ordering;
 use std::fmt::Write as _;
 
 use chess_trainer_domain::notation::to_swedish;
-use chess_trainer_engine::attacks::attackers;
+use chess_trainer_engine::attacks::{attackers, is_threatened};
 use chess_trainer_engine::describe::color_name;
-use chess_trainer_engine::{Board, Color, File, Piece, Rank, Square};
+use chess_trainer_engine::san::legal_moves;
+use chess_trainer_engine::{Board, Color, File, GameStatus, Piece, Rank, Square};
 
+use crate::commentary::yours;
 use crate::game::Game;
 use crate::knowledge::{KnowledgeBase, Score};
 
@@ -130,6 +132,26 @@ fn square_html(board: &Board, square: Square, classes: &str, extra: &Extra) -> S
     )
 }
 
+/// Klass och skärmläsartext för schack och matt på en ruta.
+fn check_marks(board: &Board, square: Square) -> (&'static str, &'static str) {
+    let checkers = board.checkers();
+    if checkers.is_empty() {
+        return ("", "");
+    }
+    let mated = board.status() == GameStatus::Won;
+    if square == board.king(board.side_to_move()) {
+        if mated {
+            (" mated", ", schack matt")
+        } else {
+            (" in-check", ", i schack")
+        }
+    } else if mated && checkers.has(square) {
+        (" mating", ", ger matt")
+    } else {
+        ("", "")
+    }
+}
+
 /// Hela brädet. Vänt med svart nederst när `flipped` är sant.
 ///
 /// Med `marks.heat_for` färgas rutorna efter hur attackerade de är för den spelaren:
@@ -166,6 +188,9 @@ pub fn board_html(board: &Board, flipped: bool, marks: Marks) -> String {
                 classes.push_str(&class);
                 label
             });
+            let (check_class, check_label) = check_marks(board, square);
+            classes.push_str(check_class);
+            label_suffix.push_str(check_label);
             if let Some((from, to)) = marks.hint {
                 if square == from {
                     classes.push_str(" hint-from");
@@ -187,6 +212,68 @@ pub fn board_html(board: &Board, flipped: bool, marks: Marks) -> String {
             out.push_str(&square_html(board, square, &classes, &extra));
         }
     }
+    out
+}
+
+/// Högst så många hotade pjäser varnas det för åt gången.
+const MAX_WARNINGS: usize = 3;
+
+/// Rutan över brädet när partiet är slut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Banner {
+    /// Stor rubrik, som "Schack matt!".
+    pub title: &'static str,
+    /// En mening under rubriken.
+    pub text: &'static str,
+}
+
+/// Resultatrutan, när partiet är slut.
+#[must_use]
+pub fn banner(game: &Game) -> Option<Banner> {
+    let (title, text) = match game.score()? {
+        Score::Win => ("Schack matt!", "Du vann. Snyggt spelat!"),
+        Score::Loss if game.resigned() => ("Du gav upp", "Kolla lärdomarna och försök igen."),
+        Score::Loss => (
+            "Schack matt",
+            "Motorn vann den här gången. Kolla lärdomarna och försök igen.",
+        ),
+        Score::Draw if legal_moves(game.board()).is_empty() => (
+            "Patt",
+            "Den som är vid draget kan inte flytta men står inte i schack. Det blir remi.",
+        ),
+        Score::Draw => ("Remi", "Partiet slutade oavgjort."),
+    };
+    Some(Banner { title, text })
+}
+
+/// Varningar när det är spelarens tur: schack och pjäser som kan slås.
+#[must_use]
+pub fn warnings(game: &Game) -> Vec<String> {
+    if game.is_over() || game.engine_to_move() {
+        return Vec::new();
+    }
+    let board = game.board();
+    let player = game.player();
+    let mut out = Vec::new();
+    if !board.checkers().is_empty() {
+        out.push("Du står i schack! Skydda kungen.".to_owned());
+    }
+    out.extend(
+        board
+            .colors(player)
+            .into_iter()
+            .filter(|square| is_threatened(board, *square, !player))
+            .take(MAX_WARNINGS)
+            .map(|square| {
+                let piece = board.piece_on(square).unwrap_or(Piece::Pawn);
+                let threatened = if piece == Piece::Rook {
+                    "hotat"
+                } else {
+                    "hotad"
+                };
+                format!("Se upp: {} på {square} är {threatened}!", yours(piece))
+            }),
+    );
     out
 }
 
@@ -251,7 +338,8 @@ pub fn rating_svg(kb: &KnowledgeBase) -> String {
 )]
 mod tests {
     use super::{
-        Board, Color, Marks, Square, board_html, heat, move_list, rating_svg, slide, status_text,
+        Board, Color, Marks, Square, banner, board_html, heat, move_list, rating_svg, slide,
+        status_text, warnings,
     };
     use crate::game::Game;
     use crate::knowledge::{GameRecord, KnowledgeBase, Score};
@@ -436,6 +524,72 @@ mod tests {
         assert_eq!(slide(Square::G1, Square::F3, true), (-1, -2));
         assert_eq!(slide(Square::A8, Square::H1, false), (-7, -7));
         assert_eq!(slide(Square::E4, Square::E4, false), (0, 0));
+    }
+
+    #[test]
+    fn check_and_mate_are_marked_on_the_board() {
+        let check: Board = "4k3/8/8/8/8/8/8/4K2r w - - 0 1".parse().unwrap();
+        let html = board_html(&check, false, Marks::default());
+        assert!(html.contains(
+            "class=\"sq dark in-check\" data-sq=\"e1\" aria-label=\"e1 vit kung, i schack\""
+        ));
+        assert!(!html.contains("mating"));
+        let mate: Board = "R5k1/5ppp/8/8/8/8/8/4K3 b - - 0 1".parse().unwrap();
+        let mated = board_html(&mate, false, Marks::default());
+        assert!(mated.contains(
+            "class=\"sq light mated\" data-sq=\"g8\" aria-label=\"g8 svart kung, schack matt\""
+        ));
+        assert!(mated.contains(
+            "class=\"sq light mating\" data-sq=\"a8\" aria-label=\"a8 vit torn, ger matt\""
+        ));
+        assert_eq!(mated.matches("mating").count(), 1);
+        let quiet = board_html(&Board::default(), false, Marks::default());
+        assert!(!quiet.contains("check") && !quiet.contains("mate"));
+    }
+
+    #[test]
+    fn banner_for_every_ending() {
+        assert_eq!(banner(&Game::new(Color::White, 1000.0, 1)), None);
+        let mut win = Game::from_fen("6k1/5ppp/8/8/8/8/8/R3K3 w - - 0 1", Color::White);
+        win.play("Ta8").unwrap();
+        assert_eq!(banner(&win).unwrap().title, "Schack matt!");
+        let lost = Game::from_fen("R5k1/5ppp/8/8/8/8/8/4K3 b - - 0 1", Color::Black);
+        assert_eq!(banner(&lost).unwrap().title, "Schack matt");
+        assert!(banner(&lost).unwrap().text.starts_with("Motorn vann"));
+        let mut resigned = Game::new(Color::White, 1000.0, 1);
+        resigned.resign();
+        assert_eq!(banner(&resigned).unwrap().title, "Du gav upp");
+        let stalemate = Game::from_fen("7k/8/6Q1/8/8/8/8/K7 b - - 0 1", Color::White);
+        assert_eq!(banner(&stalemate).unwrap().title, "Patt");
+        let fifty = Game::from_fen("4k3/8/8/8/8/8/8/4K2R w - - 100 80", Color::White);
+        assert_eq!(banner(&fifty).unwrap().title, "Remi");
+    }
+
+    #[test]
+    fn warnings_for_check_and_threatened_pieces() {
+        let quiet = Game::new(Color::White, 1000.0, 1);
+        assert!(warnings(&quiet).is_empty());
+        let check = Game::from_fen("4k3/8/8/8/8/8/8/4K2r w - - 0 1", Color::White);
+        assert_eq!(warnings(&check), vec!["Du står i schack! Skydda kungen."]);
+        let knight = Game::from_fen("4k3/8/8/8/4p3/5N2/8/4K3 w - - 0 1", Color::White);
+        assert_eq!(
+            warnings(&knight),
+            vec!["Se upp: din springare på f3 är hotad!"]
+        );
+        let rook = Game::from_fen("4k3/8/8/8/8/8/1b6/R3K3 w - - 0 1", Color::White);
+        assert_eq!(warnings(&rook), vec!["Se upp: ditt torn på a1 är hotat!"]);
+        let many = Game::from_fen("4k3/8/8/8/1p1p1p1p/N1N1N1N1/8/4K3 w - - 0 1", Color::White);
+        assert_eq!(warnings(&many).len(), 3);
+    }
+
+    #[test]
+    fn no_warnings_on_the_engines_turn_or_after_the_game() {
+        let mut game = Game::from_fen("4k3/8/8/8/4p3/5N2/8/4K3 w - - 0 1", Color::White);
+        game.play("Kd1").unwrap();
+        assert!(warnings(&game).is_empty());
+        let mut over = Game::from_fen("4k3/8/8/8/4p3/5N2/8/4K3 w - - 0 1", Color::White);
+        over.resign();
+        assert!(warnings(&over).is_empty());
     }
 
     #[test]

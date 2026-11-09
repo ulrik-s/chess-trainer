@@ -26,7 +26,7 @@ const fn name(piece: Piece) -> &'static str {
 }
 
 /// "din springare" eller "ditt torn".
-fn yours(piece: Piece) -> String {
+pub(crate) fn yours(piece: Piece) -> String {
     let pronoun = if piece == Piece::Rook { "ditt" } else { "din" };
     format!("{pronoun} {}", name(piece))
 }
